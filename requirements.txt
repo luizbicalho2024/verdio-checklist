@@ -1,0 +1,9 @@
+streamlit
+firebase-admin
+twilio
+requests
+bcrypt
+pandas
+pyotp  # Para 2FA (TOTP)
+qrcode # Para gerar a imagem do QR Code
+pillow # Dependência do qrcode
