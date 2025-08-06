@@ -25,5 +25,6 @@ def send_email_notification(to_email, subject, body_html):
         
         return True
     except Exception as e:
-        st.error(f"Falha ao enviar e-mail de notificação: {e}")
+        # Em produção, seria bom logar esse erro em vez de mostrá-lo na UI principal
+        print(f"Falha ao enviar e-mail de notificação: {e}")
         return False
