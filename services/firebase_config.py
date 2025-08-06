@@ -1,9 +1,14 @@
+# -*- coding: utf-8 -*-
+# Este arquivo inicializa a conexão com o Firebase.
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 
 @st.cache_resource
 def initialize_firebase_app():
+    """
+    Inicializa o Firebase Admin SDK, garantindo que rode apenas uma vez.
+    """
     try:
         return firebase_admin.get_app()
     except ValueError:
@@ -17,6 +22,7 @@ db = firestore.client(app=firebase_app)
 auth_client = auth
 
 def set_custom_claims(uid, role, gestor_uid=None):
+    """Define papéis de usuário (custom claims)."""
     claims = {'role': role}
     if gestor_uid:
         claims['gestor_uid'] = gestor_uid
