@@ -1,7 +1,13 @@
 # pages/1_Dashboard_Motorista.py
-
+import sys
+import os
 import streamlit as st
 # Removido 'storage_service' das importações
+# Adiciona o diretório raiz do projeto ao sys.path
+# Isso garante que os módulos em 'services' possam ser encontrados
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.append(project_root)
 from services import firestore_service, twilio_service, etrac_service
 from datetime import datetime
 
