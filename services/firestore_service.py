@@ -7,6 +7,18 @@ def get_user(uid):
     doc_ref = db.collection("users").document(uid).get()
     return doc_ref.to_dict() if doc_ref.exists else None
 
+def get_all_users():
+    """Busca todos os usuários (motoristas e gestores) do Firestore."""
+    users_ref = db.collection("users").stream()
+    users_list = []
+    for user in users_ref:
+        user_data = user.to_dict()
+        user_data['uid'] = user.id  # Adiciona o UID ao dicionário
+        # Filtra para não mostrar o próprio admin na lista de edição
+        if user_data.get('role') != 'admin':
+            users_list.append(user_data)
+    return users_list
+
 def get_user_by_email(email):
     users_ref = db.collection("users").where("email", "==", email).limit(1).stream()
     for user in users_ref:
@@ -25,6 +37,10 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
     if etrac_api_key:
         user_data['etrac_api_key'] = etrac_api_key
     db.collection("users").document(uid).set(user_data)
+
+def update_user_data(uid, data_to_update):
+    """Atualiza os dados de um usuário no documento do Firestore."""
+    db.collection("users").document(uid).update(data_to_update)
 
 def update_user_totp_info(uid, secret, enabled):
     db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
