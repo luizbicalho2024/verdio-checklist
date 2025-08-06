@@ -1,27 +1,24 @@
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore, auth, storage
+from firebase_admin import credentials, firestore, auth
 
 @st.cache_resource
 def initialize_firebase_app():
     """
-    Inicializa o Firebase Admin SDK usando as credenciais do Streamlit Secrets.
-    Garante que a inicialização ocorra apenas uma vez.
+    Inicializa o Firebase Admin SDK se ainda não foi inicializado.
     Retorna a instância do app Firebase.
     """
     try:
         return firebase_admin.get_app()
     except ValueError:
-        creds_dict = st.secrets["firebase_credentials"]
+        # A linha abaixo é a que causa o erro se creds_dict não for um dict.
+        creds_dict = st.secrets["firebase_credentials"] 
         creds = credentials.Certificate(creds_dict)
         return firebase_admin.initialize_app(creds)
 
-# Executa a inicialização e disponibiliza os clientes para importação
 firebase_app = initialize_firebase_app()
-
 db = firestore.client(app=firebase_app)
 auth_client = auth
-storage_bucket = storage.bucket(app=firebase_app)
 
 def set_custom_claims(uid, role, gestor_uid=None):
     """Define 'custom claims' (papel) para um usuário, essencial para as regras de segurança."""
