@@ -8,7 +8,6 @@ def get_user(uid):
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def get_all_users():
-    """Busca todos os usuários (motoristas e gestores) do Firestore."""
     users_ref = db.collection("users").stream()
     users_list = []
     for user in users_ref:
@@ -19,7 +18,6 @@ def get_all_users():
     return users_list
 
 def get_all_managers():
-    """Busca todos os usuários com o papel de 'gestor'."""
     users_ref = db.collection("users").where("role", "==", "gestor").stream()
     managers_list = []
     for user in users_ref:
@@ -50,18 +48,9 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
 def update_user_data(uid, data_to_update):
     db.collection("users").document(uid).update(data_to_update)
 
-def update_user_totp_info(uid, secret, enabled):
-    db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
-
 def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
-
-def get_logs_paginated(limit=20, start_after_doc=None):
-    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-    if start_after_doc:
-        query = query.start_after(start_after_doc)
-    return query.get()
 
 def save_checklist(data):
     return db.collection("checklists").add(data)
@@ -83,3 +72,45 @@ def update_checklist_status(doc_id, new_status, approver_email):
     db.collection("checklists").document(doc_id).update({
         "status": new_status, "approved_by": approver_email, "approval_timestamp": datetime.now()
     })
+
+def get_checklist_template():
+    """Busca o modelo de checklist padrão."""
+    doc_ref = db.collection("app_configs").document("checklist_template").get()
+    if doc_ref.exists:
+        return doc_ref.to_dict().get("items", [])
+    # Se não existir, retorna um padrão e cria no banco
+    default_items = ["Pneus", "Luzes", "Freios", "Nível de Óleo", "Documentação"]
+    db.collection("app_configs").document("checklist_template").set({"items": default_items})
+    return default_items
+
+def update_checklist_template(items_list):
+    """Atualiza o modelo de checklist."""
+    db.collection("app_configs").document("checklist_template").set({"items": items_list})
+
+def create_maintenance_order(checklist_data):
+    """Cria uma nova ordem de serviço a partir de um checklist reprovado."""
+    order_data = {
+        "created_at": datetime.now(),
+        "status": "Aberta",
+        "vehicle_plate": checklist_data.get('vehicle_plate'),
+        "driver_email": checklist_data.get('driver_email'),
+        "gestor_uid": checklist_data.get('gestor_uid'),
+        "checklist_notes": checklist_data.get('notes'),
+        "failed_items": [item for item, status in checklist_data.get('items', {}).items() if status == "Não OK"],
+        "maintenance_notes": ""
+    }
+    db.collection("maintenance_orders").add(order_data)
+
+def get_maintenance_orders_for_gestor(gestor_uid):
+    """Busca todas as ordens de serviço de um gestor."""
+    query = db.collection("maintenance_orders").where("gestor_uid", "==", gestor_uid).order_by("created_at", direction=firestore.Query.DESCENDING)
+    orders = []
+    for doc in query.stream():
+        order_data = doc.to_dict()
+        order_data['doc_id'] = doc.id
+        orders.append(order_data)
+    return orders
+
+def update_maintenance_order(doc_id, updates):
+    """Atualiza uma ordem de serviço."""
+    db.collection("maintenance_orders").document(doc_id).update(updates)
