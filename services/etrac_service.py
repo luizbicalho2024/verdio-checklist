@@ -1,49 +1,51 @@
 # -*- coding: utf-8 -*-
-# Este arquivo gerencia a comunicação com a API da eTrac.
 import streamlit as st
 import requests
 
-def get_vehicles_from_etrac(api_key):
+def get_vehicles_from_etrac(email, api_key):
     """
-    Busca os veículos de um cliente na API da eTrac usando a chave fornecida.
+    Busca as últimas posições da frota (que contém os dados dos veículos)
+    usando o método POST e Basic Auth.
     """
-    # A URL base da API. Verifique na documentação se esta é a URL correta.
-    # A documentação que você forneceu (https://api.etrac.com.br/monitoramento/doc)
-    # sugere que a URL para obter os veículos é esta.
-    url = "https://api.etrac.com.br/monitoramento/veiculos"
+    # Novo endpoint correto
+    url = "http://api.etrac.com.br/monitoramento/ultimas-posicoes"
     
-    # Os parâmetros da requisição, incluindo a chave da API.
-    params = {
-        'apiKey': api_key
-    }
+    st.info(f"Conectando à eTrac com o usuário: {email}...")
     
     try:
-        # Faz a requisição GET para a API com um timeout de 10 segundos.
-        response = requests.get(url, params=params, timeout=10)
+        # Faz a requisição POST. A autenticação Basic Auth é feita passando uma tupla (username, password) para o parâmetro `auth`.
+        response = requests.post(url, auth=(email, api_key), timeout=15)
         
         # Lança um erro para respostas com códigos de erro HTTP (4xx ou 5xx).
-        # Se a chave da API for inválida, por exemplo, isso irá gerar um erro 401.
         response.raise_for_status()
         
-        # Retorna a lista de veículos em formato JSON.
-        # A API deve retornar uma lista de dicionários. Ex: [{'placa': 'ABC-1234', ...}]
-        vehicles = response.json()
+        # A API retorna uma lista de dicionários, um para cada veículo.
+        vehicle_data = response.json()
         
-        if not vehicles:
-            st.warning("A API eTrac não retornou veículos para a chave fornecida.")
+        if not vehicle_data:
+            st.warning("A API eTrac não retornou veículos para estas credenciais.")
             return []
             
-        return vehicles
+        # Opcional: Extrair apenas os campos que precisamos para evitar carregar dados demais.
+        # Vamos assumir que o retorno tem 'placa' e 'modelo' para o dropdown.
+        # Adicione outros campos que vierem da API se precisar deles.
+        simplified_vehicles = []
+        for vehicle in vehicle_data:
+            simplified_vehicles.append({
+                'placa': vehicle.get('placa'),
+                'modelo': vehicle.get('modelo', 'Modelo não informado'), # Exemplo com valor padrão
+                'idRastreador': vehicle.get('idRastreador') # Supondo que este campo exista
+            })
+            
+        return simplified_vehicles
 
     except requests.exceptions.HTTPError as http_err:
-        # Erros específicos de HTTP (como 401 Não Autorizado, 404 Não Encontrado)
         if response.status_code == 401:
-            st.error("Erro de Autenticação com a API eTrac: A chave da API é inválida ou expirou.")
+            st.error("Erro de Autenticação com a API eTrac: O e-mail ou a chave da API estão incorretos.")
         else:
             st.error(f"Erro HTTP ao buscar veículos da eTrac: {http_err}")
         return []
         
     except requests.exceptions.RequestException as e:
-        # Erros gerais de rede (falha de conexão, timeout, etc.)
         st.error(f"Erro de conexão com a API eTrac: {e}")
         return []
