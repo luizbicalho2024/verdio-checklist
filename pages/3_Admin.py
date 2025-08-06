@@ -13,26 +13,25 @@ if user_data.get('role') != 'admin':
 
 st.title("👑 Painel de Administração")
 
+# Adicionada a aba de edição, que estava faltando no seu último pedido
 tab1, tab2, tab3 = st.tabs(["🏢 Cadastrar Gestor", "📜 Logs", "✏️ Editar Usuários"])
 
 with tab1:
     st.subheader("Cadastrar Novo Gestor")
     with st.form("new_gestor_form", clear_on_submit=True):
-        gestor_email = st.text_input("Email do Gestor (para login no sistema)")
+        st.info("O e-mail do gestor será usado tanto para o login no sistema quanto para o acesso à API da eTrac.")
+        gestor_email = st.text_input("Email do Gestor (Login e Username da API)")
         gestor_password = st.text_input("Senha Provisória (para login no sistema)", type="password")
-        st.divider()
-        st.info("Credenciais da Plataforma eTrac")
-        etrac_email_acesso = st.text_input("Email de Acesso à Plataforma eTrac")
-        etrac_api_key = st.text_input("Chave da API Gerada na Plataforma eTrac", type="password")
+        etrac_api_key = st.text_input("Chave da API Gerada na Plataforma eTrac (Password da API)", type="password")
         
         if st.form_submit_button("Cadastrar Gestor"):
-            if all([gestor_email, gestor_password, etrac_email_acesso, etrac_api_key]):
+            if all([gestor_email, gestor_password, etrac_api_key]):
                 if firestore_service.get_user_by_email(gestor_email):
                     st.error("Este email de sistema já está cadastrado.")
                 else:
                     auth_service.create_user_with_password(
                         gestor_email, gestor_password, 'gestor', 
-                        etrac_email=etrac_email_acesso, etrac_api_key=etrac_api_key
+                        etrac_api_key=etrac_api_key
                     )
                     st.success(f"Gestor {gestor_email} criado com sucesso!")
             else:
