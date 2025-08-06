@@ -55,7 +55,7 @@ def get_logs_paginated(limit=20, start_after_doc=None):
 def save_checklist(data):
     return db.collection("checklists").add(data)
 
-# --- NOVAS FUNÇÕES ADICIONADAS ABAIXO ---
+# --- FUNÇÕES DO PAINEL DO GESTOR (QUE ESTAVAM FALTANDO) ---
 
 def get_checklists_for_gestor(gestor_uid):
     """Busca todos os checklists de um gestor, ordenados pelo mais recente."""
