@@ -5,11 +5,11 @@ from . import firestore_service as fs
 from .firebase_config import auth_client, set_custom_claims
 
 def create_user_with_password(email, password, role, gestor_uid=None):
-    try:
+     try:
         user = auth_client.create_user(email=email)
         set_custom_claims(user.uid, role, gestor_uid)
         password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        fs.create_firestore_user(user.uid, email, role, password_hash, gestor_uid)
+        fs.create_firestore_user(user.uid, email, role, password_hash, gestor_uid, etrac_api_key=etrac_api_key) # Passando o novo parâmetro
         return user
     except Exception as e:
         st.error(f"Erro ao criar usuário: {e}")
