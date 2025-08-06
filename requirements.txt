@@ -7,3 +7,4 @@ pandas
 pyotp
 qrcode
 pillow
+matplotlib
