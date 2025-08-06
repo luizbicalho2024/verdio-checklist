@@ -24,14 +24,19 @@ tab1, tab2, tab3 = st.tabs(["⚠️ Aprovações Pendentes", "📋 Histórico de
 
 with tab1:
     st.subheader("Checklists Pendentes de Aprovação")
-    pending_checklists = firestore_service.get_pending_checklists_for_gestor(gestor_uid)
+    
+    # Usamos st.cache_data para não buscar no banco a cada interação
+    @st.cache_data(ttl=60) # Cache de 60 segundos
+    def get_pending_checklists(uid):
+        return firestore_service.get_pending_checklists_for_gestor(uid)
+
+    pending_checklists = get_pending_checklists(gestor_uid)
 
     if not pending_checklists:
         st.success("Nenhum checklist pendente no momento.")
     else:
         st.info(f"Você tem {len(pending_checklists)} checklist(s) aguardando sua ação.")
         for checklist in pending_checklists:
-            # Formatando a data para melhor visualização
             checklist_time = checklist['timestamp'].strftime('%d/%m/%Y às %H:%M')
             with st.expander(f"**Veículo:** {checklist['vehicle_plate']} | **Motorista:** {checklist['driver_email']} | **Data:** {checklist_time}"):
                 st.write("**Itens com inconformidades:**")
@@ -47,31 +52,35 @@ with tab1:
                     if st.button("✅ Aprovar Saída Mesmo Assim", key=f"approve_{checklist['doc_id']}", type="primary"):
                         firestore_service.update_checklist_status(checklist['doc_id'], "Aprovado pelo Gestor", user_data['email'])
                         firestore_service.log_action(user_data['email'], "APROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} aprovado.")
-                        st.success("Checklist aprovado! A lista será atualizada.")
-                        st.rerun() # Recarrega a página para atualizar a lista
+                        st.cache_data.clear() # Limpa o cache para recarregar os dados
+                        st.rerun()
                 with col2:
                     if st.button("❌ Reprovar Saída", key=f"reject_{checklist['doc_id']}"):
                         firestore_service.update_checklist_status(checklist['doc_id'], "Reprovado pelo Gestor", user_data['email'])
                         firestore_service.log_action(user_data['email'], "REPROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} reprovado.")
-                        st.error("Checklist reprovado. A lista será atualizada.")
-                        st.rerun() # Recarrega a página para atualizar a lista
+                        st.cache_data.clear() # Limpa o cache para recarregar os dados
+                        st.rerun()
 
 with tab2:
     st.subheader("Histórico Completo de Checklists")
-    all_checklists = firestore_service.get_checklists_for_gestor(gestor_uid)
+    
+    @st.cache_data(ttl=60)
+    def get_all_checklists(uid):
+        return firestore_service.get_checklists_for_gestor(uid)
+
+    all_checklists = get_all_checklists(gestor_uid)
 
     if not all_checklists:
         st.info("Nenhum checklist encontrado no histórico.")
     else:
-        # Prepara os dados para exibição no DataFrame
         display_data = []
         for item in all_checklists:
             display_data.append({
                 "Data": item['timestamp'].strftime('%d/%m/%Y %H:%M'),
-                "Veículo": item['vehicle_plate'],
-                "Motorista": item['driver_email'],
-                "Status": item['status'],
-                "Observações": item['notes']
+                "Veículo": item.get('vehicle_plate', 'N/A'),
+                "Motorista": item.get('driver_email', 'N/A'),
+                "Status": item.get('status', 'N/A'),
+                "Observações": item.get('notes', '')
             })
         
         df = pd.DataFrame(display_data)
