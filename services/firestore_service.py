@@ -25,15 +25,13 @@ def get_user_by_email(email):
         return user_data
     return None
 
-def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etrac_email=None, etrac_api_key=None):
+def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etrac_api_key=None):
     user_data = {
         'email': email, 'role': role, 'password_hash': password_hash,
         'totp_enabled': False, 'created_at': datetime.now()
     }
     if gestor_uid:
         user_data['gestor_uid'] = gestor_uid
-    if etrac_email:
-        user_data['etrac_email'] = etrac_email
     if etrac_api_key:
         user_data['etrac_api_key'] = etrac_api_key
     db.collection("users").document(uid).set(user_data)
