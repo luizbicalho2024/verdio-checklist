@@ -1,12 +1,12 @@
+# -*- coding: utf-8 -*-
 import sys
 import os
 import streamlit as st
 from datetime import datetime
 
-# Adiciona o diretório de trabalho atual ao sys.path.
 sys.path.append(os.getcwd())
 
-from services import firestore_service, etrac_service, twilio_service
+from services import firestore_service, etrac_service
 
 st.set_page_config(page_title="Dashboard Motorista", layout="wide")
 
@@ -35,8 +35,7 @@ if not etrac_api_key:
 
 vehicles = etrac_service.get_vehicles_from_etrac(etrac_api_key)
 if not vehicles:
-    st.warning("Nenhum veículo encontrado para você.")
-    st.stop()
+    st.warning("Nenhum veículo encontrado para você."); st.stop()
 
 vehicle_options = {f"{v['placa']} - {v['modelo']}": v for v in vehicles}
 selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_options.keys())
@@ -44,7 +43,6 @@ selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_opti
 if selected_vehicle_str:
     selected_vehicle_data = vehicle_options[selected_vehicle_str]
     st.subheader(f"Itens de Verificação para {selected_vehicle_data['placa']}")
-    
     with st.form("checklist_form"):
         checklist_items = {
             "pneus": "Pneus (calibragem e estado)", "luzes": "Sistema de iluminação",
@@ -60,20 +58,18 @@ if selected_vehicle_str:
                 st.error("Preencha as observações se algum item estiver 'Não OK'.")
             else:
                 checklist_data = {
-                    "vehicle_id": selected_vehicle_data['idVeiculo'], "vehicle_plate": selected_vehicle_data['placa'],
-                    "tracker_id": selected_vehicle_data['idRastreador'], "driver_uid": st.session_state.user_uid,
-                    "driver_email": user_data['email'], "gestor_uid": user_data['gestor_uid'],
-                    "timestamp": datetime.now(), "items": results, "notes": notes
+                    "vehicle_plate": selected_vehicle_data['placa'],
+                    "tracker_id": selected_vehicle_data['idRastreador'],
+                    "driver_uid": st.session_state.user_uid,
+                    "driver_email": user_data['email'],
+                    "gestor_uid": user_data['gestor_uid'],
+                    "timestamp": datetime.now(),
+                    "items": results,
+                    "notes": notes,
+                    "status": "Aprovado" if is_ok else "Pendente"
                 }
-                
-                if is_ok:
-                    st.balloons()
-                    checklist_data["status"] = "Aprovado"
-                    # Lógica para buscar SIM e enviar SMS
-                else:
-                    st.warning("Checklist com inconformidades. Seu gestor foi notificado.")
-                    checklist_data["status"] = "Pendente"
-                
                 firestore_service.save_checklist(checklist_data)
                 firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
                 st.success("Checklist enviado com sucesso!")
+                if is_ok: st.balloons()
+                else: st.warning("Checklist com inconformidades. Seu gestor foi notificado.")
