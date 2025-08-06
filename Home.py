@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# Página principal de Login e Gerenciamento de Sessão.
 import streamlit as st
 from services import auth_service, firestore_service
 from utils import qr_code_util
@@ -34,17 +36,16 @@ def handle_registration(email, password):
         st.rerun()
 
 def enable_2fa_flow():
-    uid, email = st.session_state['user_uid'], st.session_state['user_data']['email']
+    uid = st.session_state['user_uid']
+    email = st.session_state['user_data']['email']
     if 'totp_secret_temp' not in st.session_state:
         st.session_state['totp_secret_temp'] = auth_service.generate_totp_secret()
     secret = st.session_state['totp_secret_temp']
     uri = auth_service.get_totp_uri(email, secret)
     qr_image = qr_code_util.generate_qr_code_image(uri)
-    
     st.subheader("Configure seu App Autenticador")
     st.image(qr_image)
     st.code(f"Chave manual: {secret}")
-    
     with st.form("verify_2fa_setup"):
         verification_code = st.text_input("Insira o código de 6 dígitos para confirmar", max_chars=6)
         if st.form_submit_button("Ativar 2FA"):
@@ -58,7 +59,6 @@ def enable_2fa_flow():
             else:
                 st.error("Código de verificação inválido.")
 
-# --- Roteador de Fluxo ---
 if 'flow' not in st.session_state:
     st.session_state['flow'] = 'login'
 
@@ -76,7 +76,6 @@ if st.session_state['flow'] == 'login':
 elif st.session_state['flow'] == 'register':
     st.title("Registro de Novo Usuário")
     with st.form("register_form"):
-        # Corrigido para desempacotar a tupla
         reg_email = st.text_input("Seu Email")
         reg_password = st.text_input("Crie uma Senha", type="password")
         if st.form_submit_button("Registrar"):
