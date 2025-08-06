@@ -28,6 +28,8 @@ def handle_registration(email, password):
     if firestore_service.get_user_by_email(email):
         st.error("Este email já está registrado.")
         return
+    # Motoristas que se auto-registram não são associados a um gestor inicialmente.
+    # A associação deve ser feita pelo Admin no painel de edição de usuários.
     user = auth_service.create_user_with_password(email, password, role='motorista')
     if user:
         st.success("Registro bem-sucedido! Faça o login.")
