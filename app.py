@@ -26,7 +26,12 @@ def handle_2fa_verification(uid, code):
         st.error("Código 2FA inválido.")
 
 def handle_registration(email, password):
-    # Por padrão, novos registros são de motoristas. Gestores e Admins são criados por outros admins.
+    # Verifica se o usuário já existe antes de tentar criar
+    if firestore_service.get_user_by_email(email):
+        st.error("Este email já está registrado. Por favor, faça o login.")
+        return
+
+    # Por padrão, novos registros são de motoristas.
     user = auth_service.create_user_with_password(email, password, role='motorista')
     if user:
         st.success("Registro bem-sucedido! Por favor, faça o login.")
@@ -57,7 +62,9 @@ def enable_2fa_flow():
         if submitted:
             if auth_service.verify_totp_code_with_secret(secret, verification_code):
                 auth_service.enable_user_totp(uid, secret)
-                st.session_state['user_data']['totp_enabled'] = True
+                # Atualiza o estado da sessão para refletir a mudança
+                if 'user_data' in st.session_state:
+                    st.session_state['user_data']['totp_enabled'] = True
                 del st.session_state['totp_secret_temp']
                 st.success("Autenticação de Dois Fatores ativada com sucesso!")
                 st.session_state['flow'] = 'logged_in'
@@ -82,8 +89,23 @@ if st.session_state['flow'] == 'login':
         st.session_state['flow'] = 'register'
         st.rerun()
 
+# INÍCIO DO BLOCO CORRIGIDO
 elif st.session_state['flow'] == 'register':
-    # ... (código de registro, como na versão anterior) ...
+    st.title("Registro de Novo Usuário")
+    with st.form("register_form", clear_on_submit=True):
+        reg_email = st.text_input("Seu Email")
+        reg_password = st.text_input("Crie uma Senha", type="password")
+        submitted = st.form_submit_button("Registrar")
+        if submitted:
+            if reg_email and reg_password:
+                handle_registration(reg_email, reg_password)
+            else:
+                st.warning("Por favor, preencha todos os campos.")
+            
+    if st.button("Já tem uma conta? Faça o login"):
+        st.session_state['flow'] = 'login'
+        st.rerun()
+# FIM DO BLOCO CORRIGIDO
 
 elif st.session_state['flow'] == 'verify_2fa':
     uid = st.session_state.get('pending_login_uid')
@@ -96,7 +118,7 @@ elif st.session_state['flow'] == 'verify_2fa':
         code = st.text_input("Insira o código do seu app autenticador", max_chars=6)
         if st.button("Verificar"):
             handle_2fa_verification(uid, code)
-    else: # Se 2FA não estiver ativo, loga direto
+    else:
         st.session_state['logged_in'] = True
         st.session_state['user_uid'] = uid
         st.session_state['user_data'] = firestore_service.get_user(uid)
