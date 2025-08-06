@@ -1,41 +1,39 @@
 # -*- coding: utf-8 -*-
-import sys
-import os
-import streamlit as st
-from datetime import datetime
-
+import sys, os, streamlit as st
 sys.path.append(os.getcwd())
-
 from services import firestore_service, etrac_service
+from datetime import datetime
 
 st.set_page_config(page_title="Dashboard Motorista", layout="wide")
 
 if not st.session_state.get('logged_in'):
-    st.warning("Por favor, faça o login para acessar esta página.")
-    st.stop()
+    st.warning("Por favor, faça o login para acessar esta página."); st.stop()
 
 user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'motorista':
-    st.error("Acesso negado.")
-    st.stop()
+    st.error("Acesso negado."); st.stop()
 
 st.title(f"📋 Checklist Pré-Jornada, {user_data.get('email')}")
 
 gestor_uid = user_data.get('gestor_uid')
 if not gestor_uid:
-    st.error("Este usuário motorista não está associado a nenhum gestor.")
-    st.stop()
+    st.error("Este usuário motorista não está associado a nenhum gestor."); st.stop()
 
 gestor_data = firestore_service.get_user(gestor_uid)
-etrac_api_key = gestor_data.get('etrac_api_key') if gestor_data else None
+# Busca as novas credenciais do documento do gestor
+gestor_etrac_email = gestor_data.get('etrac_email') if gestor_data else None
+gestor_etrac_api_key = gestor_data.get('etrac_api_key') if gestor_data else None
 
-if not etrac_api_key:
-    st.error("Seu gestor não foi encontrado ou não possui uma chave de API eTrac configurada.")
-    st.stop()
+if not gestor_etrac_email or not gestor_etrac_api_key:
+    st.error("Seu gestor não foi encontrado ou não possui credenciais da eTrac configuradas (e-mail e chave API)."); st.stop()
 
-vehicles = etrac_service.get_vehicles_from_etrac(etrac_api_key)
+# Chama o serviço com as credenciais corretas
+vehicles = etrac_service.get_vehicles_from_etrac(gestor_etrac_email, gestor_etrac_api_key)
 if not vehicles:
-    st.warning("Nenhum veículo encontrado para você."); st.stop()
+    st.warning("Nenhum veículo foi retornado pela API da eTrac."); st.stop()
+
+# Sobre a pesquisa no dropdown:
+st.info("💡 Dica: Clique no campo de seleção de veículo abaixo e comece a digitar para pesquisar pela placa ou modelo.")
 
 vehicle_options = {f"{v['placa']} - {v['modelo']}": v for v in vehicles}
 selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_options.keys())
@@ -43,6 +41,7 @@ selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_opti
 if selected_vehicle_str:
     selected_vehicle_data = vehicle_options[selected_vehicle_str]
     st.subheader(f"Itens de Verificação para {selected_vehicle_data['placa']}")
+    # O resto da lógica do formulário continua aqui...
     with st.form("checklist_form"):
         checklist_items = {
             "pneus": "Pneus (calibragem e estado)", "luzes": "Sistema de iluminação",
