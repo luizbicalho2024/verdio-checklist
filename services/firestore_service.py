@@ -54,3 +54,28 @@ def get_logs_paginated(limit=20, start_after_doc=None):
 
 def save_checklist(data):
     return db.collection("checklists").add(data)
+
+# --- NOVAS FUNÇÕES ADICIONADAS ABAIXO ---
+
+def get_checklists_for_gestor(gestor_uid):
+    """Busca todos os checklists de um gestor, ordenados pelo mais recente."""
+    query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).order_by("timestamp", direction=firestore.Query.DESCENDING)
+    return [doc.to_dict() for doc in query.stream()]
+
+def get_pending_checklists_for_gestor(gestor_uid):
+    """Busca apenas os checklists com status 'Pendente' de um gestor."""
+    query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
+    checklists = []
+    for doc in query.stream():
+        checklist_data = doc.to_dict()
+        checklist_data['doc_id'] = doc.id  # Guarda o ID do documento para facilitar a atualização
+        checklists.append(checklist_data)
+    return checklists
+
+def update_checklist_status(doc_id, new_status, approver_email):
+    """Atualiza o status de um checklist específico pelo ID do seu documento."""
+    db.collection("checklists").document(doc_id).update({
+        "status": new_status,
+        "approved_by": approver_email,
+        "approval_timestamp": datetime.now()
+    })
