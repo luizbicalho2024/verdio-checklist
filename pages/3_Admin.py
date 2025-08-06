@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
-import sys, os, streamlit as st, pandas as pd
+import sys
+import os
+import streamlit as st
+import pandas as pd
+
 sys.path.append(os.getcwd())
+
 from services import firestore_service, auth_service
 
 st.set_page_config(page_title="Painel Admin", layout="wide")
@@ -13,56 +18,16 @@ if user_data.get('role') != 'admin':
 
 st.title("👑 Painel de Administração")
 
-# Adicionada a aba de edição, que estava faltando no seu último pedido
-tab1, tab2, tab3 = st.tabs(["🏢 Cadastrar Gestor", "📜 Logs", "✏️ Editar Usuários"])
+def clear_editing_state():
+    if 'editing_user_uid' in st.session_state:
+        del st.session_state['editing_user_uid']
+    st.cache_data.clear()
+
+tab1, tab2, tab3 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📜 Logs de Auditoria"])
 
 with tab1:
-    st.subheader("Cadastrar Novo Gestor")
-    with st.form("new_gestor_form", clear_on_submit=True):
-        st.info("O e-mail do gestor será usado tanto para o login no sistema quanto para o acesso à API da eTrac.")
-        gestor_email = st.text_input("Email do Gestor (Login e Username da API)")
-        gestor_password = st.text_input("Senha Provisória (para login no sistema)", type="password")
-        etrac_api_key = st.text_input("Chave da API Gerada na Plataforma eTrac (Password da API)", type="password")
-        
-        if st.form_submit_button("Cadastrar Gestor"):
-            if all([gestor_email, gestor_password, etrac_api_key]):
-                if firestore_service.get_user_by_email(gestor_email):
-                    st.error("Este email de sistema já está cadastrado.")
-                else:
-                    auth_service.create_user_with_password(
-                        gestor_email, gestor_password, 'gestor', 
-                        etrac_api_key=etrac_api_key
-                    )
-                    st.success(f"Gestor {gestor_email} criado com sucesso!")
-            else:
-                st.warning("Preencha todos os campos.")
+    st.subheader("Gerenciar Usuários (Gestores e Motoristas)")
 
-with tab2:
-    st.subheader("Associar Veículo a Chip (SIM Card)")
-    st.info("Funcionalidade para cadastrar o número do chip de um veículo a ser implementada aqui.")
-
-with tab3:
-    st.subheader("Logs de Auditoria")
-    if 'last_log_doc' not in st.session_state: st.session_state.last_log_doc = None
-    
-    logs_docs = firestore_service.get_logs_paginated(limit=10, start_after_doc=st.session_state.last_log_doc)
-    if logs_docs:
-        logs_data = [doc.to_dict() for doc in logs_docs]
-        df = pd.DataFrame(logs_data)
-        st.dataframe(df[['timestamp', 'user', 'action', 'details']], use_container_width=True)
-        if len(logs_docs) == 10 and st.button("Carregar mais"):
-            st.session_state.last_log_doc = logs_docs[-1]
-            st.rerun()
-    else:
-        st.write("Nenhum log encontrado ou fim da lista.")
-
-with tab4:
-    st.subheader("Editar Dados de Usuários")
-
-    if st.button("Recarregar Lista de Usuários"):
-        clear_editing_state()
-        st.rerun()
-    
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
@@ -80,18 +45,17 @@ with tab4:
 
             new_gestor_uid = None
             if new_role == 'motorista':
-                all_users = firestore_service.get_all_users()
-                managers = {user['email']: user['uid'] for user in all_users if user['role'] == 'gestor'}
-                if managers:
+                all_managers = firestore_service.get_all_managers()
+                managers_dict = {manager['email']: manager['uid'] for manager in all_managers}
+                if managers_dict:
                     current_gestor_uid = user_to_edit.get('gestor_uid')
-                    manager_uids = list(managers.values())
+                    manager_uids = list(managers_dict.values())
                     try:
                         current_index = manager_uids.index(current_gestor_uid) if current_gestor_uid in manager_uids else 0
                     except ValueError:
                         current_index = 0
-                    
-                    selected_manager_email = st.selectbox("Associar ao Gestor", options=managers.keys(), index=current_index)
-                    new_gestor_uid = managers[selected_manager_email]
+                    selected_manager_email = st.selectbox("Associar ao Gestor", options=managers_dict.keys(), index=current_index)
+                    new_gestor_uid = managers_dict[selected_manager_email]
                 else:
                     st.warning("Nenhum gestor cadastrado para associar este motorista.")
 
@@ -100,11 +64,10 @@ with tab4:
                 firestore_updates = {'email': new_email, 'role': new_role}
                 if new_role == 'gestor':
                     firestore_updates['etrac_api_key'] = new_etrac_api_key
-                    firestore_updates['gestor_uid'] = None 
+                    if 'gestor_uid' in user_to_edit: firestore_updates['gestor_uid'] = None
                 if new_role == 'motorista':
                     firestore_updates['gestor_uid'] = new_gestor_uid
-                    if 'etrac_api_key' in user_to_edit:
-                         firestore_updates['etrac_api_key'] = None
+                    if 'etrac_api_key' in user_to_edit: firestore_updates['etrac_api_key'] = None
                 
                 firestore_service.update_user_data(uid_to_edit, firestore_updates)
                 auth_service.update_auth_user(uid_to_edit, email=new_email, password=new_password if new_password else None)
@@ -118,37 +81,78 @@ with tab4:
         if st.button("Cancelar Edição"):
             clear_editing_state()
             st.rerun()
-
+    
     else:
-        st.info("Selecione um usuário da lista abaixo para editar seus dados.")
+        st.subheader("➕ Cadastrar Novo Gestor")
+        with st.form("new_gestor_form", clear_on_submit=True):
+            gestor_email = st.text_input("Email do Gestor (Login e Username da API)")
+            gestor_password = st.text_input("Senha Provisória", type="password")
+            etrac_api_key = st.text_input("Chave da API eTrac", type="password")
+            if st.form_submit_button("Cadastrar Gestor"):
+                if all([gestor_email, gestor_password, etrac_api_key]):
+                    if firestore_service.get_user_by_email(gestor_email):
+                        st.error("Este email já está cadastrado.")
+                    else:
+                        auth_service.create_user_with_password(gestor_email, gestor_password, 'gestor', etrac_api_key=etrac_api_key)
+                        st.success(f"Gestor {gestor_email} criado!")
+                else:
+                    st.warning("Preencha todos os campos.")
+        
+        st.divider()
+        st.subheader("📋 Lista de Usuários")
+        if st.button("Recarregar Lista"): clear_editing_state(); st.rerun()
+
         all_users = firestore_service.get_all_users()
         if all_users:
-            # Cabeçalho da tabela
             col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
-            col1.markdown("**Email do Usuário**")
-            col2.markdown("**Papel**")
-            col3.markdown("**Gestor Associado**")
-            col4.markdown("**Ação**")
+            col1.markdown("**Email**"); col2.markdown("**Papel**"); col3.markdown("**Gestor Associado**"); col4.markdown("**Ação**")
             st.divider()
-
             for user_row in all_users:
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
-                with col1:
-                    st.write(user_row['email'])
-                with col2:
-                    st.write(user_row['role'])
-                with col3:
-                    gestor_email = ""
-                    # CORREÇÃO APLICADA AQUI
+                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
+                c1.write(user_row['email'])
+                c2.write(user_row['role'])
+                with c3:
+                    gestor_email_display = ""
                     gestor_uid = user_row.get('gestor_uid')
                     if gestor_uid and isinstance(gestor_uid, str):
                         gestor = firestore_service.get_user(gestor_uid)
-                        gestor_email = gestor['email'] if gestor else "UID não encontrado"
-                    st.write(gestor_email)
-                with col4:
+                        gestor_email_display = gestor['email'] if gestor else "UID não encontrado"
+                    st.write(gestor_email_display)
+                with c4:
                     if st.button("✏️ Editar", key=f"edit_{user_row['uid']}"):
                         st.session_state['editing_user_uid'] = user_row['uid']
                         st.rerun()
-                st.divider()
         else:
             st.write("Nenhum motorista ou gestor cadastrado.")
+
+with tab2:
+    st.subheader("Visualizar Painel como Gestor")
+    st.info("Selecione um gestor para visualizar o painel dele como se fosse ele.")
+    
+    managers = firestore_service.get_all_managers()
+    if not managers:
+        st.warning("Nenhum gestor cadastrado no sistema.")
+    else:
+        manager_options = {manager['email']: manager for manager in managers}
+        selected_manager_email = st.selectbox("Selecione um gestor", options=manager_options.keys())
+        
+        if st.button("Visualizar Painel", type="primary"):
+            selected_manager = manager_options[selected_manager_email]
+            st.session_state['impersonated_uid'] = selected_manager['uid']
+            st.session_state['impersonated_user_data'] = selected_manager
+            st.switch_page("pages/2_Painel_Gestor.py")
+
+with tab3:
+    st.subheader("Logs de Auditoria")
+    if 'last_log_doc' not in st.session_state: st.session_state.last_log_doc = None
+    
+    logs_docs = firestore_service.get_logs_paginated(limit=10, start_after_doc=st.session_state.last_log_doc)
+    if logs_docs:
+        logs_data = [doc.to_dict() for doc in logs_docs]
+        df = pd.DataFrame(logs_data)
+        st.dataframe(df[['timestamp', 'user', 'action', 'details']], use_container_width=True)
+        if len(logs_docs) == 10 and st.button("Carregar mais"):
+            st.session_state.last_log_doc = logs_docs[-1]
+            st.rerun()
+    else:
+        st.write("Nenhum log encontrado ou fim da lista.")
