@@ -1,5 +1,5 @@
-from .firebase_config import db
 from datetime import datetime
+from .firebase_config import db # Importa o cliente 'db' já inicializado
 
 # --- Funções de Usuário ---
 def get_user(uid):
@@ -41,7 +41,3 @@ def log_action(user_email, action, details):
         "details": details
     }
     db.collection("logs").add(log_data)
-    
-# ... (Adicione aqui as outras funções de serviço que você precisa:
-# get_vehicle_sim_number, set_vehicle_sim_number, save_checklist,
-# create_maintenance_order, get_maintenance_orders, etc.)
