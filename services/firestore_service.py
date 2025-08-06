@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
-# Este arquivo gerencia todas as operações do banco de dados Firestore.
 from datetime import datetime
-from firebase_admin import firestore  # 1. IMPORTAÇÃO ADICIONADA AQUI
+from firebase_admin import firestore
 from .firebase_config import db
 
 def get_user(uid):
@@ -9,7 +8,6 @@ def get_user(uid):
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def get_all_users():
-    """Busca todos os usuários (motoristas e gestores) do Firestore."""
     users_ref = db.collection("users").stream()
     users_list = []
     for user in users_ref:
@@ -27,19 +25,20 @@ def get_user_by_email(email):
         return user_data
     return None
 
-def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etrac_api_key=None):
+def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etrac_email=None, etrac_api_key=None):
     user_data = {
         'email': email, 'role': role, 'password_hash': password_hash,
         'totp_enabled': False, 'created_at': datetime.now()
     }
     if gestor_uid:
         user_data['gestor_uid'] = gestor_uid
+    if etrac_email:
+        user_data['etrac_email'] = etrac_email
     if etrac_api_key:
         user_data['etrac_api_key'] = etrac_api_key
     db.collection("users").document(uid).set(user_data)
 
 def update_user_data(uid, data_to_update):
-    """Atualiza os dados de um usuário no documento do Firestore."""
     db.collection("users").document(uid).update(data_to_update)
 
 def update_user_totp_info(uid, secret, enabled):
@@ -50,7 +49,6 @@ def log_action(user_email, action, details):
     db.collection("logs").add(log_data)
 
 def get_logs_paginated(limit=20, start_after_doc=None):
-    # 2. CORREÇÃO APLICADA NA LINHA ABAIXO
     query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
     if start_after_doc:
         query = query.start_after(start_after_doc)
