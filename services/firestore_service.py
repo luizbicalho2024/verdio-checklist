@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Este arquivo gerencia todas as operações do banco de dados Firestore.
 from datetime import datetime
+from firebase_admin import firestore  # 1. IMPORTAÇÃO ADICIONADA AQUI
 from .firebase_config import db
 
 def get_user(uid):
@@ -13,8 +14,7 @@ def get_all_users():
     users_list = []
     for user in users_ref:
         user_data = user.to_dict()
-        user_data['uid'] = user.id  # Adiciona o UID ao dicionário
-        # Filtra para não mostrar o próprio admin na lista de edição
+        user_data['uid'] = user.id
         if user_data.get('role') != 'admin':
             users_list.append(user_data)
     return users_list
@@ -50,7 +50,8 @@ def log_action(user_email, action, details):
     db.collection("logs").add(log_data)
 
 def get_logs_paginated(limit=20, start_after_doc=None):
-    query = db.collection("logs").order_by("timestamp", direction=db.Query.DESCENDING).limit(limit)
+    # 2. CORREÇÃO APLICADA NA LINHA ABAIXO
+    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
     if start_after_doc:
         query = query.start_after(start_after_doc)
     return query.get()
