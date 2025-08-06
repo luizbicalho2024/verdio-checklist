@@ -1,9 +1,16 @@
 import streamlit as st
+import sys
+import os
 import bcrypt
 import pandas as pd
 from twilio.rest import Client
 import firebase_service as fs
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.append(project_root)
+from services import firestore_service, twilio_service, etrac_service # Agora esta linha funcionará
+from datetime import datetime
 # --- Verificação de Login e Nível de Acesso ---
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     st.warning("Por favor, faça o login para acessar esta página.")
