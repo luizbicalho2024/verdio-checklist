@@ -1,19 +1,29 @@
-import streamlit as st
-from firebase_admin import firestore
-import pandas as pd
-
-# Inicializa a conexão
-db = firestore.client()
+from .firebase_config import db
+from datetime import datetime
 
 # --- Funções de Usuário ---
 def get_user(uid):
-    user_ref = db.collection("users").document(uid).get()
-    return user_ref.to_dict() if user_ref.exists else None
+    doc_ref = db.collection("users").document(uid).get()
+    return doc_ref.to_dict() if doc_ref.exists else None
 
-def create_firestore_user(uid, email, role, gestor_uid=None):
-    user_data = {'email': email, 'role': role, 'totp_enabled': False}
+def get_user_by_email(email):
+    users_ref = db.collection("users").where("email", "==", email).limit(1).stream()
+    for user in users_ref:
+        user_data = user.to_dict()
+        user_data['uid'] = user.id
+        return user_data
+    return None
+
+def create_firestore_user(uid, email, role, password_hash, gestor_uid=None):
+    user_data = {
+        'email': email,
+        'role': role,
+        'password_hash': password_hash,
+        'totp_enabled': False,
+        'created_at': datetime.now()
+    }
     if gestor_uid:
-        user_data['gestor_id'] = gestor_uid # UID do gestor
+        user_data['gestor_uid'] = gestor_uid
     db.collection("users").document(uid).set(user_data)
 
 def update_user_totp_info(uid, secret, enabled):
@@ -21,40 +31,17 @@ def update_user_totp_info(uid, secret, enabled):
         'totp_secret': secret,
         'totp_enabled': enabled
     })
-# ... (todas as outras funções de `get_vehicle_sim_number`, `set_vehicle_sim_number`, etc., migram para cá) ...
 
-# --- Funções de Checklist ---
-def save_checklist(data):
-    db.collection("checklists").add(data)
-
-# --- Funções de Manutenção (NOVO) ---
-def create_maintenance_order(data):
-    db.collection("maintenance_orders").add(data)
+# --- Funções de Log ---
+def log_action(user_email, action, details):
+    log_data = {
+        "timestamp": datetime.now(),
+        "user": user_email,
+        "action": action,
+        "details": details
+    }
+    db.collection("logs").add(log_data)
     
-@st.cache_data(ttl=300) # Cache de 5 minutos
-def get_maintenance_orders(gestor_uid):
-    orders_ref = db.collection("maintenance_orders").where("gestor_uid", "==", gestor_uid).stream()
-    return [order.to_dict() for order in orders_ref]
-    
-def update_maintenance_order_status(order_id, new_status):
-    docs = db.collection('maintenance_orders').where('order_id', '==', order_id).limit(1).get()
-    if docs:
-        doc_id = docs[0].id
-        db.collection('maintenance_orders').document(doc_id).update({'status': new_status})
-        return True
-    return False
-
-# --- Funções de Relatórios (NOVO) ---
-@st.cache_data(ttl=600) # Cache de 10 minutos
-def get_all_checklists_for_reports(gestor_uid):
-    checklists_ref = db.collection("checklists").where("gestor_uid", "==", gestor_uid).stream()
-    return [c.to_dict() for c in checklists_ref]
-    
-# --- Funções de Log com Paginação (NOVO) ---
-def get_logs_paginated(limit=20, start_after_doc=None):
-    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-    if start_after_doc:
-        query = query.start_after(start_after_doc)
-    
-    docs = query.get()
-    return docs # Retorna os documentos para termos a referência do último
+# ... (Adicione aqui as outras funções de serviço que você precisa:
+# get_vehicle_sim_number, set_vehicle_sim_number, save_checklist,
+# create_maintenance_order, get_maintenance_orders, etc.)
