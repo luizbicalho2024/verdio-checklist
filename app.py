@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# Página principal de Login e Gerenciamento de Sessão.
 import streamlit as st
 from services import auth_service, firestore_service
 from utils import qr_code_util
