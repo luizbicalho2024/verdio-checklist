@@ -8,6 +8,7 @@ def get_user(uid):
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def get_all_users():
+    """Busca todos os usuários (motoristas e gestores) do Firestore."""
     users_ref = db.collection("users").stream()
     users_list = []
     for user in users_ref:
@@ -16,6 +17,16 @@ def get_all_users():
         if user_data.get('role') != 'admin':
             users_list.append(user_data)
     return users_list
+
+def get_all_managers():
+    """Busca todos os usuários com o papel de 'gestor'."""
+    users_ref = db.collection("users").where("role", "==", "gestor").stream()
+    managers_list = []
+    for user in users_ref:
+        manager_data = user.to_dict()
+        manager_data['uid'] = user.id
+        managers_list.append(manager_data)
+    return managers_list
 
 def get_user_by_email(email):
     users_ref = db.collection("users").where("email", "==", email).limit(1).stream()
@@ -55,27 +66,20 @@ def get_logs_paginated(limit=20, start_after_doc=None):
 def save_checklist(data):
     return db.collection("checklists").add(data)
 
-# --- FUNÇÕES DO PAINEL DO GESTOR (QUE ESTAVAM FALTANDO) ---
-
 def get_checklists_for_gestor(gestor_uid):
-    """Busca todos os checklists de um gestor, ordenados pelo mais recente."""
     query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).order_by("timestamp", direction=firestore.Query.DESCENDING)
     return [doc.to_dict() for doc in query.stream()]
 
 def get_pending_checklists_for_gestor(gestor_uid):
-    """Busca apenas os checklists com status 'Pendente' de um gestor."""
     query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
     checklists = []
     for doc in query.stream():
         checklist_data = doc.to_dict()
-        checklist_data['doc_id'] = doc.id  # Guarda o ID do documento para facilitar a atualização
+        checklist_data['doc_id'] = doc.id
         checklists.append(checklist_data)
     return checklists
 
 def update_checklist_status(doc_id, new_status, approver_email):
-    """Atualiza o status de um checklist específico pelo ID do seu documento."""
     db.collection("checklists").document(doc_id).update({
-        "status": new_status,
-        "approved_by": approver_email,
-        "approval_timestamp": datetime.now()
+        "status": new_status, "approved_by": approver_email, "approval_timestamp": datetime.now()
     })
