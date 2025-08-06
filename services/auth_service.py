@@ -1,15 +1,17 @@
+# -*- coding: utf-8 -*-
+# Este arquivo gerencia a autenticação de usuários e 2FA.
 import streamlit as st
 import pyotp
 import bcrypt
 from . import firestore_service as fs
 from .firebase_config import auth_client, set_custom_claims
 
-def create_user_with_password(email, password, role, gestor_uid=None):
-     try:
+def create_user_with_password(email, password, role, gestor_uid=None, etrac_api_key=None):
+    try:
         user = auth_client.create_user(email=email)
         set_custom_claims(user.uid, role, gestor_uid)
         password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        fs.create_firestore_user(user.uid, email, role, password_hash, gestor_uid, etrac_api_key=etrac_api_key) # Passando o novo parâmetro
+        fs.create_firestore_user(user.uid, email, role, password_hash, gestor_uid, etrac_api_key)
         return user
     except Exception as e:
         st.error(f"Erro ao criar usuário: {e}")
@@ -23,9 +25,14 @@ def verify_user_password(email, password):
             return user_auth_record
     return None
 
-def generate_totp_secret(): return pyotp.random_base32()
-def get_totp_uri(email, secret): return pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name="ChecklistApp")
-def enable_user_totp(uid, secret): fs.update_user_totp_info(uid, secret, enabled=True)
+def generate_totp_secret():
+    return pyotp.random_base32()
+
+def get_totp_uri(email, secret):
+    return pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name="ChecklistApp")
+
+def enable_user_totp(uid, secret):
+    fs.update_user_totp_info(uid, secret, enabled=True)
 
 def verify_totp_code(uid, code):
     user_data = fs.get_user(uid)
