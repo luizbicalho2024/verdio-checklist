@@ -1,7 +1,12 @@
-import sys, os, streamlit as st
-sys.path.append(os.getcwd())
-from services import firestore_service, etrac_service, twilio_service
+import sys
+import os
+import streamlit as st
 from datetime import datetime
+
+# Adiciona o diretório de trabalho atual ao sys.path.
+sys.path.append(os.getcwd())
+
+from services import firestore_service, etrac_service, twilio_service
 
 st.set_page_config(page_title="Dashboard Motorista", layout="wide")
 
@@ -11,19 +16,27 @@ if not st.session_state.get('logged_in'):
 
 user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'motorista':
-    st.error("Acesso negado."); st.stop()
+    st.error("Acesso negado.")
+    st.stop()
 
 st.title(f"📋 Checklist Pré-Jornada, {user_data.get('email')}")
 
-gestor_data = firestore_service.get_user(user_data.get('gestor_uid', '')) if user_data.get('gestor_uid') else None
+gestor_uid = user_data.get('gestor_uid')
+if not gestor_uid:
+    st.error("Este usuário motorista não está associado a nenhum gestor.")
+    st.stop()
+
+gestor_data = firestore_service.get_user(gestor_uid)
 etrac_api_key = gestor_data.get('etrac_api_key') if gestor_data else None
 
 if not etrac_api_key:
-    st.error("Seu gestor não foi encontrado ou não possui uma chave de API eTrac configurada."); st.stop()
+    st.error("Seu gestor não foi encontrado ou não possui uma chave de API eTrac configurada.")
+    st.stop()
 
 vehicles = etrac_service.get_vehicles_from_etrac(etrac_api_key)
 if not vehicles:
-    st.warning("Nenhum veículo encontrado para você."); st.stop()
+    st.warning("Nenhum veículo encontrado para você.")
+    st.stop()
 
 vehicle_options = {f"{v['placa']} - {v['modelo']}": v for v in vehicles}
 selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_options.keys())
