@@ -1,12 +1,22 @@
-import sys, os, streamlit as st, pandas as pd
+import sys
+import os
+import streamlit as st
+import pandas as pd
+
 sys.path.append(os.getcwd())
+
 from services import firestore_service, auth_service
 
 st.set_page_config(page_title="Dashboard Gestor", layout="wide")
 
-if not st.session_state.get('logged_in'): st.warning("Faça o login."); st.stop()
+if not st.session_state.get('logged_in'):
+    st.warning("Faça o login.")
+    st.stop()
+
 user_data = st.session_state.get('user_data', {})
-if user_data.get('role') != 'gestor': st.error("Acesso negado."); st.stop()
+if user_data.get('role') != 'gestor':
+    st.error("Acesso negado.")
+    st.stop()
 
 st.title(f"📊 Painel do Gestor, {user_data.get('email')}")
 
