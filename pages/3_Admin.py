@@ -23,25 +23,23 @@ def clear_editing_state():
         del st.session_state['editing_user_uid']
     st.cache_data.clear()
 
-tab1, tab2, tab3 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📜 Logs de Auditoria"])
+tab1, tab2, tab3, tab4 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📝 Gerenciar Checklist", "📜 Logs"])
 
 with tab1:
     st.subheader("Gerenciar Usuários (Gestores e Motoristas)")
-
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
         
         st.markdown(f"### Editando: `{user_to_edit['email']}`")
-        
         with st.form("edit_user_form"):
             new_email = st.text_input("Email", value=user_to_edit['email'])
             new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
             new_role = st.selectbox("Papel", options=['motorista', 'gestor'], index=['motorista', 'gestor'].index(user_to_edit['role']))
             
-            new_etrac_api_key = ""
+            new_etrac_api_key = user_to_edit.get('etrac_api_key', '')
             if new_role == 'gestor':
-                new_etrac_api_key = st.text_input("Chave da API eTrac", value=user_to_edit.get('etrac_api_key', ''))
+                new_etrac_api_key = st.text_input("Chave da API eTrac", value=new_etrac_api_key)
 
             new_gestor_uid = None
             if new_role == 'motorista':
@@ -52,8 +50,7 @@ with tab1:
                     manager_uids = list(managers_dict.values())
                     try:
                         current_index = manager_uids.index(current_gestor_uid) if current_gestor_uid in manager_uids else 0
-                    except ValueError:
-                        current_index = 0
+                    except ValueError: current_index = 0
                     selected_manager_email = st.selectbox("Associar ao Gestor", options=managers_dict.keys(), index=current_index)
                     new_gestor_uid = managers_dict[selected_manager_email]
                 else:
@@ -77,11 +74,8 @@ with tab1:
                 firestore_service.log_action(user_data['email'], "EDITAR_USUARIO", f"Dados de {new_email} foram alterados.")
                 clear_editing_state()
                 st.rerun()
-
         if st.button("Cancelar Edição"):
-            clear_editing_state()
-            st.rerun()
-    
+            clear_editing_state(); st.rerun()
     else:
         st.subheader("➕ Cadastrar Novo Gestor")
         with st.form("new_gestor_form", clear_on_submit=True):
@@ -97,45 +91,44 @@ with tab1:
                         st.success(f"Gestor {gestor_email} criado!")
                 else:
                     st.warning("Preencha todos os campos.")
-        
         st.divider()
         st.subheader("📋 Lista de Usuários")
-        if st.button("Recarregar Lista"): clear_editing_state(); st.rerun()
+        if st.button("Recarregar Lista"):
+            clear_editing_state(); st.rerun()
 
         all_users = firestore_service.get_all_users()
         if all_users:
             col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
             col1.markdown("**Email**"); col2.markdown("**Papel**"); col3.markdown("**Gestor Associado**"); col4.markdown("**Ação**")
-            st.divider()
             for user_row in all_users:
-                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                c1.write(user_row['email'])
-                c2.write(user_row['role'])
-                with c3:
-                    gestor_email_display = ""
-                    gestor_uid = user_row.get('gestor_uid')
-                    if gestor_uid and isinstance(gestor_uid, str):
-                        gestor = firestore_service.get_user(gestor_uid)
-                        gestor_email_display = gestor['email'] if gestor else "UID não encontrado"
-                    st.write(gestor_email_display)
-                with c4:
-                    if st.button("✏️ Editar", key=f"edit_{user_row['uid']}"):
-                        st.session_state['editing_user_uid'] = user_row['uid']
-                        st.rerun()
+                with st.container():
+                    c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
+                    c1.write(user_row['email'])
+                    c2.write(user_row['role'])
+                    with c3:
+                        gestor_email_display = ""
+                        gestor_uid = user_row.get('gestor_uid')
+                        if gestor_uid and isinstance(gestor_uid, str):
+                            gestor = firestore_service.get_user(gestor_uid)
+                            gestor_email_display = gestor['email'] if gestor else "UID não encontrado"
+                        st.write(gestor_email_display)
+                    with c4:
+                        if st.button("✏️ Editar", key=f"edit_{user_row['uid']}"):
+                            st.session_state['editing_user_uid'] = user_row['uid']
+                            st.rerun()
+                    st.divider()
         else:
             st.write("Nenhum motorista ou gestor cadastrado.")
 
 with tab2:
     st.subheader("Visualizar Painel como Gestor")
     st.info("Selecione um gestor para visualizar o painel dele como se fosse ele.")
-    
     managers = firestore_service.get_all_managers()
     if not managers:
         st.warning("Nenhum gestor cadastrado no sistema.")
     else:
         manager_options = {manager['email']: manager for manager in managers}
         selected_manager_email = st.selectbox("Selecione um gestor", options=manager_options.keys())
-        
         if st.button("Visualizar Painel", type="primary"):
             selected_manager = manager_options[selected_manager_email]
             st.session_state['impersonated_uid'] = selected_manager['uid']
@@ -143,14 +136,26 @@ with tab2:
             st.switch_page("pages/2_Painel_Gestor.py")
 
 with tab3:
+    st.subheader("Gerenciar Modelo de Checklist Padrão")
+    st.info("Edite os itens que os motoristas devem verificar. Salve para aplicar a todos os checklists futuros.")
+    current_template = firestore_service.get_checklist_template()
+    template_str = "\n".join(current_template)
+    new_template_str = st.text_area("Itens do Checklist (um por linha)", value=template_str, height=250)
+    if st.button("Salvar Modelo de Checklist", type="primary"):
+        new_template_list = [line.strip() for line in new_template_str.split("\n") if line.strip()]
+        firestore_service.update_checklist_template(new_template_list)
+        st.success("Modelo de checklist salvo com sucesso!")
+        st.cache_data.clear()
+
+with tab4:
     st.subheader("Logs de Auditoria")
-    if 'last_log_doc' not in st.session_state: st.session_state.last_log_doc = None
-    
+    if 'last_log_doc' not in st.session_state:
+        st.session_state.last_log_doc = None
     logs_docs = firestore_service.get_logs_paginated(limit=10, start_after_doc=st.session_state.last_log_doc)
     if logs_docs:
         logs_data = [doc.to_dict() for doc in logs_docs]
         df = pd.DataFrame(logs_data)
-        st.dataframe(df[['timestamp', 'user', 'action', 'details']], use_container_width=True)
+        st.dataframe(df[['timestamp', 'user', 'action', 'details']], use_container_width=True, hide_index=True)
         if len(logs_docs) == 10 and st.button("Carregar mais"):
             st.session_state.last_log_doc = logs_docs[-1]
             st.rerun()
