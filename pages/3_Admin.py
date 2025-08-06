@@ -70,7 +70,6 @@ with tab4:
         clear_editing_state()
         st.rerun()
     
-    # Se um usuário está sendo editado, mostra o formulário. Senão, mostra a lista.
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
@@ -82,7 +81,6 @@ with tab4:
             new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
             new_role = st.selectbox("Papel", options=['motorista', 'gestor'], index=['motorista', 'gestor'].index(user_to_edit['role']))
             
-            # Campos condicionais
             new_etrac_api_key = ""
             if new_role == 'gestor':
                 new_etrac_api_key = st.text_input("Chave da API eTrac", value=user_to_edit.get('etrac_api_key', ''))
@@ -92,7 +90,6 @@ with tab4:
                 all_users = firestore_service.get_all_users()
                 managers = {user['email']: user['uid'] for user in all_users if user['role'] == 'gestor'}
                 if managers:
-                    # Encontra o gestor atual para pré-selecionar
                     current_gestor_uid = user_to_edit.get('gestor_uid')
                     manager_uids = list(managers.values())
                     try:
@@ -107,21 +104,17 @@ with tab4:
 
             submitted = st.form_submit_button("Salvar Alterações")
             if submitted:
-                # Atualiza dados no Firestore
                 firestore_updates = {'email': new_email, 'role': new_role}
                 if new_role == 'gestor':
                     firestore_updates['etrac_api_key'] = new_etrac_api_key
-                    firestore_updates['gestor_uid'] = None # Gestor não tem gestor
+                    firestore_updates['gestor_uid'] = None 
                 if new_role == 'motorista':
                     firestore_updates['gestor_uid'] = new_gestor_uid
-                    firestore_updates['etrac_api_key'] = None # Motorista não tem chave
+                    if 'etrac_api_key' in user_to_edit:
+                         firestore_updates['etrac_api_key'] = None
                 
                 firestore_service.update_user_data(uid_to_edit, firestore_updates)
-
-                # Atualiza dados de autenticação (email/senha)
                 auth_service.update_auth_user(uid_to_edit, email=new_email, password=new_password if new_password else None)
-
-                # Atualiza papéis (custom claims)
                 auth_service.update_user_role_and_claims(uid_to_edit, new_role, new_gestor_uid if new_role == 'motorista' else None)
                 
                 st.success(f"Usuário {new_email} atualizado com sucesso!")
@@ -135,31 +128,34 @@ with tab4:
 
     else:
         st.info("Selecione um usuário da lista abaixo para editar seus dados.")
-        
         all_users = firestore_service.get_all_users()
         if all_users:
-            users_df = pd.DataFrame(all_users)
-            
-            # Adiciona uma coluna de botões "Editar"
-            # Esta é uma forma de contornar a limitação de botões em dataframes do Streamlit
-            for index, row in users_df.iterrows():
+            # Cabeçalho da tabela
+            col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+            col1.markdown("**Email do Usuário**")
+            col2.markdown("**Papel**")
+            col3.markdown("**Gestor Associado**")
+            col4.markdown("**Ação**")
+            st.divider()
+
+            for user_row in all_users:
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
                 with col1:
-                    st.write(row['email'])
+                    st.write(user_row['email'])
                 with col2:
-                    st.write(row['role'])
+                    st.write(user_row['role'])
                 with col3:
-                    # Encontra o email do gestor associado, se houver
                     gestor_email = ""
-                    if row.get('gestor_uid'):
-                        gestor = firestore_service.get_user(row['gestor_uid'])
-                        gestor_email = gestor['email'] if gestor else "Não encontrado"
+                    # CORREÇÃO APLICADA AQUI
+                    gestor_uid = user_row.get('gestor_uid')
+                    if gestor_uid and isinstance(gestor_uid, str):
+                        gestor = firestore_service.get_user(gestor_uid)
+                        gestor_email = gestor['email'] if gestor else "UID não encontrado"
                     st.write(gestor_email)
                 with col4:
-                    if st.button("✏️ Editar", key=f"edit_{row['uid']}"):
-                        st.session_state['editing_user_uid'] = row['uid']
+                    if st.button("✏️ Editar", key=f"edit_{user_row['uid']}"):
+                        st.session_state['editing_user_uid'] = user_row['uid']
                         st.rerun()
                 st.divider()
-
         else:
             st.write("Nenhum motorista ou gestor cadastrado.")
