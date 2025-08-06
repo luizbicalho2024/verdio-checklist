@@ -17,6 +17,25 @@ def create_user_with_password(email, password, role, gestor_uid=None, etrac_api_
         st.error(f"Erro ao criar usuário: {e}")
         return None
 
+def update_auth_user(uid, email=None, password=None):
+    """Atualiza e-mail e/ou senha de um usuário no Firebase Authentication."""
+    try:
+        if email and password:
+            auth_client.update_user(uid, email=email, password=password)
+        elif email:
+            auth_client.update_user(uid, email=email)
+        elif password:
+            auth_client.update_user(uid, password=password)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao atualizar dados de autenticação: {e}")
+        return False
+
+def update_user_role_and_claims(uid, new_role, new_gestor_uid=None):
+    """Atualiza o papel (custom claim) de um usuário."""
+    set_custom_claims(uid, new_role, new_gestor_uid)
+
+
 def verify_user_password(email, password):
     user_auth_record = fs.get_user_by_email(email)
     if user_auth_record:
