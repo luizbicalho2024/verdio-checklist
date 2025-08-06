@@ -5,7 +5,7 @@ from . import firestore_service as fs
 from .firebase_config import auth_client, set_custom_claims
 
 def create_user_with_password(email, password, role, gestor_uid=None):
-    """Cria um usuário no Firebase Auth e um documento no Firestore com senha hash."""
+    """Cria um usuário no Firebase Auth e um documento no Firestore."""
     try:
         user = auth_client.create_user(email=email)
         set_custom_claims(user.uid, role, gestor_uid)
@@ -28,15 +28,19 @@ def verify_user_password(email, password):
     return None
 
 def generate_totp_secret():
+    """Gera um novo segredo para 2FA (TOTP)."""
     return pyotp.random_base32()
 
 def get_totp_uri(email, secret):
+    """Gera a URI 'otpauth://' para o QR Code."""
     return pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name="ChecklistApp")
 
 def enable_user_totp(uid, secret):
+    """Salva o segredo TOTP e ativa o 2FA para o usuário no Firestore."""
     fs.update_user_totp_info(uid, secret, enabled=True)
 
 def verify_totp_code(uid, code):
+    """Verifica se o código 2FA fornecido pelo usuário é válido."""
     user_data = fs.get_user(uid)
     if user_data and user_data.get('totp_enabled'):
         secret = user_data.get('totp_secret')
@@ -50,5 +54,6 @@ def verify_totp_code_with_secret(secret, code):
     return totp.verify(code)
 
 def is_totp_enabled(uid):
+    """Verifica se o 2FA está ativo para um usuário."""
     user_data = fs.get_user(uid)
     return user_data.get('totp_enabled', False) if user_data else False
