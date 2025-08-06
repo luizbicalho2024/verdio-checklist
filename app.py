@@ -38,7 +38,8 @@ def enable_2fa_flow():
     if 'totp_secret_temp' not in st.session_state:
         st.session_state['totp_secret_temp'] = auth_service.generate_totp_secret()
     secret = st.session_state['totp_secret_temp']
-    uri, qr_image = auth_service.get_totp_uri(email, secret), qr_code_util.generate_qr_code_image(uri)
+    uri = auth_service.get_totp_uri(email, secret)
+    qr_image = qr_code_util.generate_qr_code_image(uri)
     
     st.subheader("Configure seu App Autenticador")
     st.image(qr_image)
@@ -58,14 +59,16 @@ def enable_2fa_flow():
                 st.error("Código de verificação inválido.")
 
 # --- Roteador de Fluxo ---
-if 'flow' not in st.session_state: st.session_state['flow'] = 'login'
+if 'flow' not in st.session_state:
+    st.session_state['flow'] = 'login'
 
 if st.session_state['flow'] == 'login':
     st.title("Login do Sistema de Checklist")
     with st.form("login_form"):
         email = st.text_input("Email")
         password = st.text_input("Senha", type="password")
-        if st.form_submit_button("Entrar"): handle_login(email, password)
+        if st.form_submit_button("Entrar"):
+            handle_login(email, password)
     if st.button("Não tem uma conta? Registre-se"):
         st.session_state['flow'] = 'register'
         st.rerun()
@@ -73,22 +76,28 @@ if st.session_state['flow'] == 'login':
 elif st.session_state['flow'] == 'register':
     st.title("Registro de Novo Usuário")
     with st.form("register_form"):
-        reg_email = st.text_input("Seu Email"), 
+        # Corrigido para desempacotar a tupla
+        reg_email = st.text_input("Seu Email")
         reg_password = st.text_input("Crie uma Senha", type="password")
         if st.form_submit_button("Registrar"):
-            if reg_email and reg_password: handle_registration(reg_email[0], reg_password)
-            else: st.warning("Preencha todos os campos.")
+            if reg_email and reg_password:
+                handle_registration(reg_email, reg_password)
+            else:
+                st.warning("Preencha todos os campos.")
     if st.button("Já tem uma conta? Faça o login"):
         st.session_state['flow'] = 'login'
         st.rerun()
 
 elif st.session_state['flow'] == 'verify_2fa':
     uid = st.session_state.get('pending_login_uid')
-    if not uid: st.session_state['flow'] = 'login'; st.rerun()
+    if not uid:
+        st.session_state['flow'] = 'login'
+        st.rerun()
     if auth_service.is_totp_enabled(uid):
         st.title("Verificação de Dois Fatores")
         code = st.text_input("Insira o código do seu app autenticador", max_chars=6)
-        if st.button("Verificar"): handle_2fa_verification(uid, code)
+        if st.button("Verificar"):
+            handle_2fa_verification(uid, code)
     else:
         st.session_state.update({'logged_in': True, 'user_uid': uid, 'user_data': firestore_service.get_user(uid), 'flow': 'logged_in'})
         st.rerun()
@@ -103,6 +112,9 @@ elif st.session_state['flow'] == 'logged_in':
             st.session_state['flow'] = 'enable_2fa'
             st.rerun()
     if st.button("Sair"):
-        st.session_state.clear(); st.session_state['flow'] = 'login'; st.rerun()
+        st.session_state.clear()
+        st.session_state['flow'] = 'login'
+        st.rerun()
 
-elif st.session_state['flow'] == 'enable_2fa': enable_2fa_flow()
+elif st.session_state['flow'] == 'enable_2fa':
+    enable_2fa_flow()
