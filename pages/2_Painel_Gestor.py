@@ -5,32 +5,58 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+# Garante que os módulos da pasta 'services' sejam encontrados
 sys.path.append(os.getcwd())
 
 from services import firestore_service, auth_service
 
 st.set_page_config(page_title="Dashboard Gestor", layout="wide")
 
-if not st.session_state.get('logged_in'):
-    st.warning("Faça o login."); st.stop()
-user_data = st.session_state.get('user_data', {})
-if user_data.get('role') != 'gestor':
-    st.error("Acesso negado."); st.stop()
+# --- LÓGICA DE IMPERSONIFICAÇÃO ---
+is_impersonating = False
+# Verifica se o usuário logado é um admin e se ele selecionou um gestor para visualizar
+if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
+    is_impersonating = True
+    # Usa os dados do gestor selecionado pelo admin
+    display_user_data = st.session_state.get('impersonated_user_data', {})
+    display_uid = st.session_state.get('impersonated_uid')
+else:
+    # Comportamento normal: usa os dados do usuário logado
+    if not st.session_state.get('logged_in'):
+        st.warning("Faça o login."); st.stop()
+    display_user_data = st.session_state.get('user_data', {})
+    display_uid = st.session_state.get('user_uid')
+    if display_user_data.get('role') != 'gestor':
+        st.error("Acesso negado."); st.stop()
+# --- FIM DA LÓGICA DE IMPERSONIFICAÇÃO ---
 
-gestor_uid = st.session_state.get('user_uid')
-st.title(f"📊 Painel do Gestor, {user_data.get('email')}")
+
+# Banner de aviso quando em modo de visualização
+if is_impersonating:
+    def exit_impersonation_mode():
+        if 'impersonated_uid' in st.session_state:
+            del st.session_state['impersonated_uid']
+        if 'impersonated_user_data' in st.session_state:
+            del st.session_state['impersonated_user_data']
+        st.switch_page("pages/3_Admin.py")
+
+    st.warning(f"⚠️ Você está visualizando o painel como o gestor **{display_user_data.get('email')}**.", icon="👁️")
+    if st.button("⬅️ Voltar ao Painel de Admin"):
+        exit_impersonation_mode()
+
+# O resto da página usa as variáveis 'display_uid' e 'display_user_data'
+st.title(f"📊 Painel do Gestor, {display_user_data.get('email')}")
 
 tab1, tab2, tab3 = st.tabs(["⚠️ Aprovações Pendentes", "📋 Histórico de Checklists", "👤 Cadastrar Motorista"])
 
 with tab1:
     st.subheader("Checklists Pendentes de Aprovação")
     
-    # Usamos st.cache_data para não buscar no banco a cada interação
-    @st.cache_data(ttl=60) # Cache de 60 segundos
+    @st.cache_data(ttl=60)
     def get_pending_checklists(uid):
         return firestore_service.get_pending_checklists_for_gestor(uid)
 
-    pending_checklists = get_pending_checklists(gestor_uid)
+    pending_checklists = get_pending_checklists(display_uid)
 
     if not pending_checklists:
         st.success("Nenhum checklist pendente no momento.")
@@ -50,15 +76,15 @@ with tab1:
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("✅ Aprovar Saída Mesmo Assim", key=f"approve_{checklist['doc_id']}", type="primary"):
-                        firestore_service.update_checklist_status(checklist['doc_id'], "Aprovado pelo Gestor", user_data['email'])
-                        firestore_service.log_action(user_data['email'], "APROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} aprovado.")
-                        st.cache_data.clear() # Limpa o cache para recarregar os dados
+                        firestore_service.update_checklist_status(checklist['doc_id'], "Aprovado pelo Gestor", display_user_data['email'])
+                        firestore_service.log_action(st.session_state.user_data['email'], "APROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} aprovado. (Ação por: {st.session_state.user_data['email']})")
+                        st.cache_data.clear()
                         st.rerun()
                 with col2:
                     if st.button("❌ Reprovar Saída", key=f"reject_{checklist['doc_id']}"):
-                        firestore_service.update_checklist_status(checklist['doc_id'], "Reprovado pelo Gestor", user_data['email'])
-                        firestore_service.log_action(user_data['email'], "REPROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} reprovado.")
-                        st.cache_data.clear() # Limpa o cache para recarregar os dados
+                        firestore_service.update_checklist_status(checklist['doc_id'], "Reprovado pelo Gestor", display_user_data['email'])
+                        firestore_service.log_action(st.session_state.user_data['email'], "REPROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} reprovado. (Ação por: {st.session_state.user_data['email']})")
+                        st.cache_data.clear()
                         st.rerun()
 
 with tab2:
@@ -68,7 +94,7 @@ with tab2:
     def get_all_checklists(uid):
         return firestore_service.get_checklists_for_gestor(uid)
 
-    all_checklists = get_all_checklists(gestor_uid)
+    all_checklists = get_all_checklists(display_uid)
 
     if not all_checklists:
         st.info("Nenhum checklist encontrado no histórico.")
@@ -82,7 +108,6 @@ with tab2:
                 "Status": item.get('status', 'N/A'),
                 "Observações": item.get('notes', '')
             })
-        
         df = pd.DataFrame(display_data)
         st.dataframe(df, use_container_width=True)
 
@@ -96,8 +121,8 @@ with tab3:
                 if firestore_service.get_user_by_email(driver_email):
                     st.error("Este email já está cadastrado.")
                 else:
-                    auth_service.create_user_with_password(driver_email, driver_password, 'motorista', gestor_uid=st.session_state.user_uid)
-                    firestore_service.log_action(user_data['email'], "CADASTRO_MOTORISTA", f"Motorista {driver_email} cadastrado.")
+                    auth_service.create_user_with_password(driver_email, driver_password, 'motorista', gestor_uid=display_uid)
+                    firestore_service.log_action(st.session_state.user_data['email'], "CADASTRO_MOTORISTA", f"Motorista {driver_email} cadastrado para o gestor {display_user_data['email']}.")
                     st.success(f"Motorista {driver_email} cadastrado com sucesso!")
             else:
                 st.warning("Preencha todos os campos.")
