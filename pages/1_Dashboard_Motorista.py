@@ -20,19 +20,18 @@ if not gestor_uid:
     st.error("Este usuário motorista não está associado a nenhum gestor."); st.stop()
 
 gestor_data = firestore_service.get_user(gestor_uid)
-# Busca as novas credenciais do documento do gestor
-gestor_etrac_email = gestor_data.get('etrac_email') if gestor_data else None
+# Busca o e-mail principal e a chave da API do documento do gestor
+gestor_email_acesso = gestor_data.get('email') if gestor_data else None
 gestor_etrac_api_key = gestor_data.get('etrac_api_key') if gestor_data else None
 
-if not gestor_etrac_email or not gestor_etrac_api_key:
+if not gestor_email_acesso or not gestor_etrac_api_key:
     st.error("Seu gestor não foi encontrado ou não possui credenciais da eTrac configuradas (e-mail e chave API)."); st.stop()
 
 # Chama o serviço com as credenciais corretas
-vehicles = etrac_service.get_vehicles_from_etrac(gestor_etrac_email, gestor_etrac_api_key)
+vehicles = etrac_service.get_vehicles_from_etrac(gestor_email_acesso, gestor_etrac_api_key)
 if not vehicles:
     st.warning("Nenhum veículo foi retornado pela API da eTrac."); st.stop()
 
-# Sobre a pesquisa no dropdown:
 st.info("💡 Dica: Clique no campo de seleção de veículo abaixo e comece a digitar para pesquisar pela placa ou modelo.")
 
 vehicle_options = {f"{v['placa']} - {v['modelo']}": v for v in vehicles}
