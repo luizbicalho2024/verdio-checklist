@@ -3,27 +3,6 @@ from datetime import datetime
 from firebase_admin import firestore
 from .firebase_config import db
 
-# --- NOVAS FUNÇÕES PARA GERENCIAR VEÍCULOS/CHIPS ---
-
-def update_vehicle_sim_number(plate, serial, sim_number, gestor_uid):
-    """Cria ou atualiza os dados de um veículo, focando no número do chip."""
-    # Usamos a placa como ID do documento para fácil acesso.
-    doc_ref = db.collection("vehicles").document(plate)
-    doc_ref.set({
-        "placa": plate,
-        "equipamento_serial": serial,
-        "tracker_sim_number": sim_number,
-        "gestor_uid": gestor_uid,
-        "last_updated": datetime.now()
-    })
-
-def get_vehicle_details_by_plate(plate):
-    """Busca os detalhes de um veículo (incluindo o chip) pela placa."""
-    doc_ref = db.collection("vehicles").document(plate).get()
-    return doc_ref.to_dict() if doc_ref.exists else None
-
-# --- RESTO DO ARQUIVO (sem alterações) ---
-
 def get_user(uid):
     doc_ref = db.collection("users").document(uid).get()
     return doc_ref.to_dict() if doc_ref.exists else None
@@ -47,6 +26,16 @@ def get_all_managers():
         managers_list.append(manager_data)
     return managers_list
 
+def get_drivers_for_manager(gestor_uid):
+    """Busca todos os motoristas associados a um gestor específico."""
+    query = db.collection("users").where("role", "==", "motorista").where("gestor_uid", "==", gestor_uid)
+    drivers_list = []
+    for doc in query.stream():
+        driver_data = doc.to_dict()
+        driver_data['uid'] = doc.id
+        drivers_list.append(driver_data)
+    return drivers_list
+
 def get_user_by_email(email):
     users_ref = db.collection("users").where("email", "==", email).limit(1).stream()
     for user in users_ref:
@@ -58,7 +47,8 @@ def get_user_by_email(email):
 def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etrac_api_key=None):
     user_data = {
         'email': email, 'role': role, 'password_hash': password_hash,
-        'totp_enabled': False, 'created_at': datetime.now()
+        'totp_enabled': False, 'created_at': datetime.now(),
+        'is_active': True
     }
     if gestor_uid:
         user_data['gestor_uid'] = gestor_uid
@@ -76,9 +66,7 @@ def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
 
-# --- FUNÇÃO RESTAURADA ABAIXO ---
 def get_logs_paginated(limit=20, start_after_doc=None):
-    """Busca os logs de forma paginada para a tela do Admin."""
     query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
     if start_after_doc:
         query = query.start_after(start_after_doc)
@@ -118,8 +106,7 @@ def update_checklist_template(items_list):
 
 def create_maintenance_order(checklist_data):
     order_data = {
-        "created_at": datetime.now(),
-        "status": "Aberta",
+        "created_at": datetime.now(), "status": "Aberta",
         "vehicle_plate": checklist_data.get('vehicle_plate'),
         "driver_email": checklist_data.get('driver_email'),
         "gestor_uid": checklist_data.get('gestor_uid'),
@@ -140,3 +127,15 @@ def get_maintenance_orders_for_gestor(gestor_uid):
 
 def update_maintenance_order(doc_id, updates):
     db.collection("maintenance_orders").document(doc_id).update(updates)
+
+def update_vehicle_sim_number(plate, serial, sim_number, gestor_uid):
+    doc_ref = db.collection("vehicles").document(plate)
+    doc_ref.set({
+        "placa": plate, "equipamento_serial": serial,
+        "tracker_sim_number": sim_number, "gestor_uid": gestor_uid,
+        "last_updated": datetime.now()
+    })
+
+def get_vehicle_details_by_plate(plate):
+    doc_ref = db.collection("vehicles").document(plate).get()
+    return doc_ref.to_dict() if doc_ref.exists else None
