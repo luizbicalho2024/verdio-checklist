@@ -1,59 +1,51 @@
 # -*- coding: utf-8 -*-
-# Este arquivo gerencia a comunicação com a API da eTrac.
 import streamlit as st
 import requests
 
 def get_vehicles_from_etrac(email, api_key):
-    """
-    Busca as últimas posições da frota, processando corretamente a chave "retorno" da resposta JSON.
-    """
+    """Busca as últimas posições da frota completa."""
     url = "http://api.etrac.com.br/monitoramento/ultimas-posicoes"
-    
-    st.info(f"Conectando à eTrac com o usuário: {email}...")
-    
     try:
         response = requests.post(url, auth=(email, api_key), timeout=15)
         response.raise_for_status()
-        
-        # Pega o objeto JSON completo da resposta.
         response_data = response.json()
-        
-        # --- CORREÇÃO PRINCIPAL APLICADA AQUI ---
-        # Acessa a lista de veículos que está DENTRO da chave "retorno".
-        vehicle_list_from_api = response_data.get('retorno')
-        
-        # Verifica se a chave "retorno" existe e se é uma lista.
-        if not vehicle_list_from_api or not isinstance(vehicle_list_from_api, list):
-            st.warning("A API eTrac não retornou uma lista de veículos válida.")
-            # Opcional: mostrar o erro retornado pela API, se houver.
-            if response_data.get("erro"):
-                st.error(f"Erro da API: {response_data.get('erro')}")
+        vehicle_list = response_data.get('retorno')
+        if not vehicle_list or not isinstance(vehicle_list, list):
+            if response_data.get("erro"): st.error(f"Erro da API: {response_data.get('erro')}")
             return []
-        
-        # Itera sobre a lista de veículos retornada pela API.
-        simplified_vehicles = []
-        for vehicle_data in vehicle_list_from_api:
-            if isinstance(vehicle_data, dict):
-                simplified_vehicles.append({
-                    'placa': vehicle_data.get('placa'),
-                    'modelo': vehicle_data.get('descricao', 'Modelo não informado'),
-                    'idRastreador': vehicle_data.get('equipamento_serial')
-                })
-            
-        st.success(f"{len(simplified_vehicles)} veículos carregados com sucesso da eTrac!")
-        return simplified_vehicles
-
+        return vehicle_list
     except requests.exceptions.HTTPError as http_err:
-        if response.status_code == 401:
-            st.error("Erro de Autenticação com a API eTrac: O e-mail ou a chave da API estão incorretos.")
-        else:
-            st.error(f"Erro HTTP ao buscar veículos da eTrac: {http_err}")
+        if response.status_code == 401: st.error("Erro de Autenticação com a API eTrac: Credenciais inválidas.")
+        else: st.error(f"Erro HTTP ao buscar frota: {http_err}")
         return []
-        
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API eTrac: {e}")
         return []
     except ValueError:
-        st.error("A API da eTrac retornou uma resposta inesperada que não é um JSON válido.")
-        st.code(response.text)
+        st.error("A API da eTrac retornou uma resposta inesperada (não-JSON).")
+        return []
+
+def get_single_vehicle_position(email, api_key, plate):
+    """Busca a última posição de um único veículo."""
+    url = "http://api.etrac.com.br/monitoramento/ultimaposicao"
+    try:
+        response = requests.post(url, auth=(email, api_key), json={"placa": plate}, timeout=10)
+        response.raise_for_status()
+        response_data = response.json()
+        # A resposta para um único veículo pode não estar aninhada
+        return response_data.get('retorno', [response_data])[0]
+    except Exception:
+        return None # Retorna None em caso de qualquer erro
+
+def get_trip_summary(email, api_key, plate, date):
+    """Busca o resumo de viagens de um veículo para uma data específica."""
+    url = "http://api.etrac.com.br/monitoramento/resumoviagens"
+    formatted_date = date.strftime("%d-%m-%Y")
+    try:
+        response = requests.post(url, auth=(email, api_key), json={"placa": plate, "data": formatted_date}, timeout=20)
+        response.raise_for_status()
+        response_data = response.json()
+        return response_data.get('conducoes', [])
+    except Exception as e:
+        st.error(f"Não foi possível buscar o resumo de viagens: {e}")
         return []
