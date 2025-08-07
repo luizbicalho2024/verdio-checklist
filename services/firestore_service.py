@@ -3,6 +3,27 @@ from datetime import datetime
 from firebase_admin import firestore
 from .firebase_config import db
 
+# --- NOVAS FUNÇÕES PARA GERENCIAR VEÍCULOS/CHIPS ---
+
+def update_vehicle_sim_number(plate, serial, sim_number, gestor_uid):
+    """Cria ou atualiza os dados de um veículo, focando no número do chip."""
+    # Usamos a placa como ID do documento para fácil acesso.
+    doc_ref = db.collection("vehicles").document(plate)
+    doc_ref.set({
+        "placa": plate,
+        "equipamento_serial": serial,
+        "tracker_sim_number": sim_number,
+        "gestor_uid": gestor_uid,
+        "last_updated": datetime.now()
+    })
+
+def get_vehicle_details_by_plate(plate):
+    """Busca os detalhes de um veículo (incluindo o chip) pela placa."""
+    doc_ref = db.collection("vehicles").document(plate).get()
+    return doc_ref.to_dict() if doc_ref.exists else None
+
+# --- RESTO DO ARQUIVO (sem alterações) ---
+
 def get_user(uid):
     doc_ref = db.collection("users").document(uid).get()
     return doc_ref.to_dict() if doc_ref.exists else None
