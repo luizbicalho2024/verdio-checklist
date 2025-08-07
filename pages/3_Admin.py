@@ -32,21 +32,19 @@ def clear_editing_state():
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📲 Vincular Chip", "📝 Gerenciar Checklist", "📜 Logs"])
 
 with tab1:
+    # ... (código da Gestão de Usuários como antes) ...
     st.subheader("Gerenciar Usuários (Gestores e Motoristas)")
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
-        
         st.markdown(f"### Editando: `{user_to_edit['email']}`")
         with st.form("edit_user_form"):
             new_email = st.text_input("Email", value=user_to_edit['email'])
             new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
             new_role = st.selectbox("Papel", options=['motorista', 'gestor'], index=['motorista', 'gestor'].index(user_to_edit['role']))
-            
             new_etrac_api_key = user_to_edit.get('etrac_api_key', '')
             if new_role == 'gestor':
                 new_etrac_api_key = st.text_input("Chave da API eTrac", value=new_etrac_api_key)
-
             new_gestor_uid = None
             if new_role == 'motorista':
                 all_managers = firestore_service.get_all_managers()
@@ -61,7 +59,6 @@ with tab1:
                     new_gestor_uid = managers_dict[selected_manager_email]
                 else:
                     st.warning("Nenhum gestor cadastrado para associar este motorista.")
-
             submitted = st.form_submit_button("Salvar Alterações")
             if submitted:
                 firestore_updates = {'email': new_email, 'role': new_role}
@@ -71,11 +68,9 @@ with tab1:
                 if new_role == 'motorista':
                     firestore_updates['gestor_uid'] = new_gestor_uid
                     if 'etrac_api_key' in user_to_edit: firestore_updates['etrac_api_key'] = None
-                
                 firestore_service.update_user_data(uid_to_edit, firestore_updates)
                 auth_service.update_auth_user(uid_to_edit, email=new_email, password=new_password if new_password else None)
                 auth_service.update_user_role_and_claims(uid_to_edit, new_role, new_gestor_uid if new_role == 'motorista' else None)
-                
                 st.success(f"Usuário {new_email} atualizado com sucesso!")
                 firestore_service.log_action(user_data['email'], "EDITAR_USUARIO", f"Dados de {new_email} foram alterados.")
                 clear_editing_state()
@@ -101,7 +96,6 @@ with tab1:
         st.subheader("📋 Lista de Usuários")
         if st.button("Recarregar Lista"):
             clear_editing_state(); st.rerun()
-
         all_users = firestore_service.get_all_users()
         if all_users:
             col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
@@ -127,6 +121,7 @@ with tab1:
             st.write("Nenhum motorista ou gestor cadastrado.")
 
 with tab2:
+    # ... (código de Visualizar como Gestor como antes) ...
     st.subheader("Visualizar Painel como Gestor")
     st.info("Selecione um gestor para visualizar o painel dele como se fosse ele.")
     managers = firestore_service.get_all_managers()
@@ -162,17 +157,20 @@ with tab3:
                 st.warning("Nenhum veículo encontrado para este gestor na API eTrac.")
             else:
                 st.write(f"Exibindo {len(vehicles)} veículos para **{selected_manager_email}**.")
-                for vehicle in vehicles:
+                # --- CORREÇÃO APLICADA AQUI ---
+                # Usamos enumerate para obter um índice único 'i' para cada item
+                for i, vehicle in enumerate(vehicles):
                     plate = vehicle['placa']
                     serial = vehicle.get('idRastreador', 'N/A')
                     saved_data = firestore_service.get_vehicle_details_by_plate(plate)
-                    current_sim = saved_data['tracker_sim_number'] if saved_data and 'tracker_sim_number' in saved_data else ""
+                    current_sim = saved_data.get('tracker_sim_number', "") if saved_data else ""
                     
                     col1, col2, col3 = st.columns([2, 2, 3])
                     col1.text(f"Placa: {plate}")
                     col2.text(f"Serial: {serial}")
-                    with col3.form(key=f"form_{plate}"):
-                        new_sim = st.text_input("Número do Chip (ex: +5569912345678)", value=current_sim, key=f"sim_{plate}")
+                    # A chave do formulário e do input agora incluem o índice 'i' para serem únicas
+                    with col3.form(key=f"form_{plate}_{i}"):
+                        new_sim = st.text_input("Número do Chip (ex: +5569912345678)", value=current_sim, key=f"sim_{plate}_{i}")
                         if st.form_submit_button("Salvar"):
                             if new_sim and serial != 'N/A':
                                 firestore_service.update_vehicle_sim_number(plate, serial, new_sim, gestor_uid)
@@ -184,6 +182,7 @@ with tab3:
                     st.divider()
 
 with tab4:
+    # ... (código de Gerenciar Checklist como antes) ...
     st.subheader("Gerenciar Modelo de Checklist Padrão")
     st.info("Edite os itens que os motoristas devem verificar. Salve para aplicar a todos os checklists futuros.")
     current_template = firestore_service.get_checklist_template()
@@ -196,6 +195,7 @@ with tab4:
         st.cache_data.clear()
 
 with tab5:
+    # ... (código de Logs como antes) ...
     st.subheader("Logs de Auditoria")
     if 'last_log_doc' not in st.session_state:
         st.session_state.last_log_doc = None
