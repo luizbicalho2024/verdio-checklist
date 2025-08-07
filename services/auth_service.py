@@ -16,7 +16,17 @@ def create_user_with_password(email, password, role, gestor_uid=None, etrac_api_
         st.error(f"Erro ao criar usuário: {e}")
         return None
 
+def set_user_disabled_status(uid, is_disabled: bool):
+    """Habilita ou desabilita um usuário no Firebase Authentication."""
+    try:
+        auth_client.update_user(uid, disabled=is_disabled)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao alterar status do usuário: {e}")
+        return False
+
 def update_auth_user(uid, email=None, password=None):
+    """Atualiza e-mail e/ou senha de um usuário no Firebase Authentication."""
     try:
         if email and password:
             auth_client.update_user(uid, email=email, password=password)
@@ -60,9 +70,7 @@ def is_totp_enabled(uid):
     user_data = fs.get_user(uid)
     return user_data.get('totp_enabled', False) if user_data else False
 
-# --- NOVA FUNÇÃO DE LOGOUT ---
 def logout():
-    """Limpa o estado da sessão e redireciona para a página de login."""
     keys_to_delete = [
         'logged_in', 'user_uid', 'user_data', 'flow', 
         'pending_login_uid', 'redirected', 
@@ -71,6 +79,5 @@ def logout():
     for key in keys_to_delete:
         if key in st.session_state:
             del st.session_state[key]
-    
     st.session_state['flow'] = 'login'
     st.switch_page("app.py")
