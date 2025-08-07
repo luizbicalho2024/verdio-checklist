@@ -3,15 +3,17 @@ import sys
 import os
 import streamlit as st
 
-# --- BLOCO DE CORREÇÃO ADICIONADO AQUI ---
-# Garante que a pasta 'services' e 'utils' sejam encontradas pelo Python
 sys.path.append(os.getcwd())
-# --- FIM DO BLOCO DE CORREÇÃO ---
 
 from services import auth_service, firestore_service
 from utils import qr_code_util
 
-st.set_page_config(page_title="Login - Checklist App", layout="centered")
+# CONFIGURAÇÃO DA PÁGINA: TEMA LIGHT E MODO WIDE
+st.set_page_config(
+    page_title="Login - Checklist App",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 def handle_login(email, password):
     user_record = auth_service.verify_user_password(email, password)
@@ -66,81 +68,77 @@ def enable_2fa_flow():
             else:
                 st.error("Código de verificação inválido.")
 
-# --- Roteador de Fluxo ---
 if 'flow' not in st.session_state:
     st.session_state['flow'] = 'login'
 
 if st.session_state.get('logged_in') and st.session_state.get('flow') != 'logged_in':
     st.session_state['flow'] = 'logged_in'
 
-if st.session_state['flow'] == 'login':
-    st.title("Login do Sistema de Checklist")
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Senha", type="password")
-        if st.form_submit_button("Entrar"):
-            handle_login(email, password)
-    if st.button("Não tem uma conta? Registre-se"):
-        st.session_state['flow'] = 'register'
-        st.rerun()
-
-elif st.session_state['flow'] == 'register':
-    st.title("Registro de Novo Usuário")
-    with st.form("register_form"):
-        reg_email = st.text_input("Seu Email")
-        reg_password = st.text_input("Crie uma Senha", type="password")
-        if st.form_submit_button("Registrar"):
-            if reg_email and reg_password:
-                handle_registration(reg_email, reg_password)
-            else:
-                st.warning("Preencha todos os campos.")
-    if st.button("Já tem uma conta? Faça o login"):
-        st.session_state['flow'] = 'login'
-        st.rerun()
-
-elif st.session_state['flow'] == 'verify_2fa':
-    uid = st.session_state.get('pending_login_uid')
-    if not uid:
-        st.session_state['flow'] = 'login'
-        st.rerun()
-    if auth_service.is_totp_enabled(uid):
-        st.title("Verificação de Dois Fatores")
-        code = st.text_input("Insira o código do seu app autenticador", max_chars=6)
-        if st.button("Verificar"):
-            handle_2fa_verification(uid, code)
-    else:
-        st.session_state.update({'logged_in': True, 'user_uid': uid, 'user_data': firestore_service.get_user(uid), 'flow': 'logged_in'})
-        st.rerun()
-
-elif st.session_state['flow'] == 'logged_in':
-    if 'redirected' not in st.session_state:
-        st.session_state['redirected'] = True
-        role = st.session_state.user_data.get('role')
-        if role == 'motorista':
-            st.switch_page("pages/1_Painel_Motorista.py")
-        elif role == 'gestor':
-            st.switch_page("pages/2_Painel_Gestor.py")
-        elif role == 'admin':
-            st.switch_page("pages/3_Admin.py")
-        else:
-            st.error("Papel de usuário desconhecido.")
-    
-    else:
-        user_data = st.session_state.user_data
-        st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
-        st.info("Você já está logado. Use o menu à esquerda para navegar.")
-
-        with st.sidebar:
-            st.write(f"Logado como:")
-            st.markdown(f"**{user_data.get('email')}**")
-            st.write(f"Papel: **{user_data.get('role').capitalize()}**")
-            if st.button("Sair", use_container_width=True):
-                auth_service.logout()
-        
-        if not user_data.get('totp_enabled'):
-            if st.button("🔒 Ativar Autenticação de Dois Fatores"):
-                st.session_state['flow'] = 'enable_2fa'
+# Centraliza o conteúdo da página de login
+with st.container():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.session_state['flow'] == 'login':
+            st.title("Login do Sistema de Checklist")
+            with st.form("login_form"):
+                email = st.text_input("Email")
+                password = st.text_input("Senha", type="password")
+                if st.form_submit_button("Entrar"):
+                    handle_login(email, password)
+            if st.button("Não tem uma conta? Registre-se"):
+                st.session_state['flow'] = 'register'
                 st.rerun()
 
-elif st.session_state['flow'] == 'enable_2fa':
-    enable_2fa_flow()
+        elif st.session_state['flow'] == 'register':
+            st.title("Registro de Novo Usuário")
+            with st.form("register_form"):
+                reg_email = st.text_input("Seu Email")
+                reg_password = st.text_input("Crie uma Senha", type="password")
+                if st.form_submit_button("Registrar"):
+                    if reg_email and reg_password:
+                        handle_registration(reg_email, reg_password)
+                    else:
+                        st.warning("Preencha todos os campos.")
+            if st.button("Já tem uma conta? Faça o login"):
+                st.session_state['flow'] = 'login'
+                st.rerun()
+
+        elif st.session_state['flow'] == 'verify_2fa':
+            uid = st.session_state.get('pending_login_uid')
+            if not uid:
+                st.session_state['flow'] = 'login'
+                st.rerun()
+            if auth_service.is_totp_enabled(uid):
+                st.title("Verificação de Dois Fatores")
+                code = st.text_input("Insira o código do seu app autenticador", max_chars=6)
+                if st.button("Verificar"):
+                    handle_2fa_verification(uid, code)
+            else:
+                st.session_state.update({'logged_in': True, 'user_uid': uid, 'user_data': firestore_service.get_user(uid), 'flow': 'logged_in'})
+                st.rerun()
+
+        elif st.session_state['flow'] == 'logged_in':
+            if 'redirected' not in st.session_state:
+                st.session_state['redirected'] = True
+                role = st.session_state.user_data.get('role')
+                if role == 'motorista': st.switch_page("pages/1_Painel_Motorista.py")
+                elif role == 'gestor': st.switch_page("pages/2_Painel_Gestor.py")
+                elif role == 'admin': st.switch_page("pages/3_Admin.py")
+                else: st.error("Papel de usuário desconhecido.")
+            else:
+                user_data = st.session_state.user_data
+                st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
+                st.info("Você já está logado. Use o menu à esquerda para navegar.")
+                with st.sidebar:
+                    st.write(f"Logado como:")
+                    st.markdown(f"**{user_data.get('email')}**")
+                    st.write(f"Papel: **{user_data.get('role').capitalize()}**")
+                    if st.button("Sair", use_container_width=True):
+                        auth_service.logout()
+                if not user_data.get('totp_enabled'):
+                    if st.button("🔒 Ativar Autenticação de Dois Fatores"):
+                        st.session_state['flow'] = 'enable_2fa'
+                        st.rerun()
+
+        elif st.session_state['flow'] == 'enable_2fa':
+            enable_2fa_flow()
