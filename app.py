@@ -1,5 +1,13 @@
 # -*- coding: utf-8 -*-
+import sys
+import os
 import streamlit as st
+
+# --- BLOCO DE CORREÇÃO ADICIONADO AQUI ---
+# Garante que a pasta 'services' e 'utils' sejam encontradas pelo Python
+sys.path.append(os.getcwd())
+# --- FIM DO BLOCO DE CORREÇÃO ---
+
 from services import auth_service, firestore_service
 from utils import qr_code_util
 
@@ -91,7 +99,7 @@ elif st.session_state['flow'] == 'register':
         st.rerun()
 
 elif st.session_state['flow'] == 'verify_2fa':
-    uid = st.session_state.get('pending_lin_uid')
+    uid = st.session_state.get('pending_login_uid')
     if not uid:
         st.session_state['flow'] = 'login'
         st.rerun()
@@ -108,9 +116,7 @@ elif st.session_state['flow'] == 'logged_in':
     if 'redirected' not in st.session_state:
         st.session_state['redirected'] = True
         role = st.session_state.user_data.get('role')
-
         if role == 'motorista':
-            # CORREÇÃO APLICADA AQUI:
             st.switch_page("pages/1_Painel_Motorista.py")
         elif role == 'gestor':
             st.switch_page("pages/2_Painel_Gestor.py")
@@ -123,12 +129,14 @@ elif st.session_state['flow'] == 'logged_in':
         user_data = st.session_state.user_data
         st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
         st.info("Você já está logado. Use o menu à esquerda para navegar.")
+
         with st.sidebar:
             st.write(f"Logado como:")
             st.markdown(f"**{user_data.get('email')}**")
             st.write(f"Papel: **{user_data.get('role').capitalize()}**")
             if st.button("Sair", use_container_width=True):
                 auth_service.logout()
+        
         if not user_data.get('totp_enabled'):
             if st.button("🔒 Ativar Autenticação de Dois Fatores"):
                 st.session_state['flow'] = 'enable_2fa'
