@@ -8,6 +8,7 @@ sys.path.append(os.getcwd())
 
 from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service
 
+# CONFIGURAÇÃO DA PÁGINA: TEMA LIGHT E MODO WIDE
 st.set_page_config(page_title="Painel Motorista", layout="wide")
 
 if not st.session_state.get('logged_in'):
