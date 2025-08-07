@@ -91,7 +91,7 @@ elif st.session_state['flow'] == 'register':
         st.rerun()
 
 elif st.session_state['flow'] == 'verify_2fa':
-    uid = st.session_state.get('pending_login_uid')
+    uid = st.session_state.get('pending_lin_uid')
     if not uid:
         st.session_state['flow'] = 'login'
         st.rerun()
@@ -108,23 +108,27 @@ elif st.session_state['flow'] == 'logged_in':
     if 'redirected' not in st.session_state:
         st.session_state['redirected'] = True
         role = st.session_state.user_data.get('role')
-        if role == 'motorista': st.switch_page("pages/1_Dashboard_Motorista.py")
-        elif role == 'gestor': st.switch_page("pages/2_Painel_Gestor.py")
-        elif role == 'admin': st.switch_page("pages/3_Admin.py")
-        else: st.error("Papel de usuário desconhecido.")
+
+        if role == 'motorista':
+            # CORREÇÃO APLICADA AQUI:
+            st.switch_page("pages/1_Painel_Motorista.py")
+        elif role == 'gestor':
+            st.switch_page("pages/2_Painel_Gestor.py")
+        elif role == 'admin':
+            st.switch_page("pages/3_Admin.py")
+        else:
+            st.error("Papel de usuário desconhecido.")
     
     else:
         user_data = st.session_state.user_data
         st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
         st.info("Você já está logado. Use o menu à esquerda para navegar.")
-
         with st.sidebar:
-            st.sidebar.write(f"Logado como:")
-            st.sidebar.markdown(f"**{user_data.get('email')}**")
-            st.sidebar.write(f"Papel: **{user_data.get('role').capitalize()}**")
-            if st.sidebar.button("Sair", use_container_width=True):
+            st.write(f"Logado como:")
+            st.markdown(f"**{user_data.get('email')}**")
+            st.write(f"Papel: **{user_data.get('role').capitalize()}**")
+            if st.button("Sair", use_container_width=True):
                 auth_service.logout()
-        
         if not user_data.get('totp_enabled'):
             if st.button("🔒 Ativar Autenticação de Dois Fatores"):
                 st.session_state['flow'] = 'enable_2fa'
