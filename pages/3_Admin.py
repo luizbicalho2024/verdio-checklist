@@ -16,6 +16,12 @@ user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'admin':
     st.error("Acesso negado."); st.stop()
 
+with st.sidebar:
+    st.write(f"Logado como:")
+    st.markdown(f"**{user_data.get('email')}**")
+    if st.button("Sair", use_container_width=True):
+        auth_service.logout()
+
 st.title("👑 Painel de Administração")
 
 def clear_editing_state():
