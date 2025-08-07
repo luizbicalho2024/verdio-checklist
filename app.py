@@ -20,7 +20,6 @@ def handle_2fa_verification(uid, code):
         st.session_state['user_uid'] = uid
         st.session_state['user_data'] = firestore_service.get_user(uid)
         st.session_state['flow'] = 'logged_in'
-        # Não redirecionamos aqui, apenas preparamos o estado. O rerun fará o resto.
         st.rerun()
     else:
         st.error("Código 2FA inválido.")
@@ -63,7 +62,6 @@ def enable_2fa_flow():
 if 'flow' not in st.session_state:
     st.session_state['flow'] = 'login'
 
-# Se o usuário já está logado e acessa a página principal, redireciona-o
 if st.session_state.get('logged_in') and st.session_state.get('flow') != 'logged_in':
     st.session_state['flow'] = 'logged_in'
 
@@ -106,41 +104,31 @@ elif st.session_state['flow'] == 'verify_2fa':
         st.session_state.update({'logged_in': True, 'user_uid': uid, 'user_data': firestore_service.get_user(uid), 'flow': 'logged_in'})
         st.rerun()
 
-# --- BLOCO DE CÓDIGO ALTERADO ---
 elif st.session_state['flow'] == 'logged_in':
-    # Em vez de mostrar uma mensagem de boas-vindas aqui,
-    # verificamos se o redirecionamento já foi feito.
     if 'redirected' not in st.session_state:
         st.session_state['redirected'] = True
         role = st.session_state.user_data.get('role')
-
-        # Redireciona com base no papel do usuário
-        if role == 'motorista':
-            st.switch_page("pages/1_Dashboard_Motorista.py")
-        elif role == 'gestor':
-            st.switch_page("pages/2_Painel_Gestor.py")
-        elif role == 'admin':
-            st.switch_page("pages/3_Admin.py")
-        else:
-            st.error("Papel de usuário desconhecido. Contate o suporte.")
-            if st.button("Sair"):
-                st.session_state.clear(); st.session_state['flow'] = 'login'; st.rerun()
+        if role == 'motorista': st.switch_page("pages/1_Dashboard_Motorista.py")
+        elif role == 'gestor': st.switch_page("pages/2_Painel_Gestor.py")
+        elif role == 'admin': st.switch_page("pages/3_Admin.py")
+        else: st.error("Papel de usuário desconhecido.")
     
-    # Se o usuário já foi redirecionado e voltou para a página inicial,
-    # mostramos o painel de logout e 2FA.
     else:
         user_data = st.session_state.user_data
         st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
         st.info("Você já está logado. Use o menu à esquerda para navegar.")
+
+        with st.sidebar:
+            st.sidebar.write(f"Logado como:")
+            st.sidebar.markdown(f"**{user_data.get('email')}**")
+            st.sidebar.write(f"Papel: **{user_data.get('role').capitalize()}**")
+            if st.sidebar.button("Sair", use_container_width=True):
+                auth_service.logout()
+        
         if not user_data.get('totp_enabled'):
             if st.button("🔒 Ativar Autenticação de Dois Fatores"):
                 st.session_state['flow'] = 'enable_2fa'
                 st.rerun()
-        if st.button("Sair"):
-            st.session_state.clear()
-            st.session_state['flow'] = 'login'
-            st.rerun()
-# --- FIM DO BLOCO ALTERADO ---
 
 elif st.session_state['flow'] == 'enable_2fa':
     enable_2fa_flow()
