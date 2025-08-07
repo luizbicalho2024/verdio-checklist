@@ -6,10 +6,11 @@ import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
 from collections import Counter
+import numpy as np
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, auth_service
+from services import firestore_service, auth_service, etrac_service
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
@@ -45,9 +46,49 @@ if is_impersonating:
 
 st.title(f"📊 Painel do Gestor, {display_user_data.get('email')}")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"])
+tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas = st.tabs([
+    "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"
+])
 
-with tab1:
+with tab_mapa:
+    st.subheader("Localização da Frota em Tempo Real")
+    if st.button("Atualizar Posições"):
+        st.cache_data.clear()
+
+    @st.cache_data(ttl=120)
+    def get_vehicles_cached(email, api_key):
+        return etrac_service.get_vehicles_from_etrac(email, api_key)
+
+    vehicles_list = get_vehicles_cached(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+    
+    if not vehicles_list:
+        st.warning("Nenhum veículo encontrado para exibir no mapa.")
+    else:
+        map_data, status_data = [], []
+        for v in vehicles_list:
+            lat, lon = v.get('latitude'), v.get('longitude')
+            if lat and lon and str(lat).strip() and str(lon).strip():
+                try: map_data.append({'lat': float(lat), 'lon': float(lon)})
+                except (ValueError, TypeError): continue
+            
+            ignicao_status = "✔️ Ligada" if v.get('ignicao') == 1 else "❌ Desligada"
+            bateria_status = f"{v.get('bateria')}V"
+            status_data.append({
+                "Veículo": f"{v.get('placa')} ({v.get('descricao')})",
+                "Ignição": ignicao_status,
+                "Bateria": bateria_status,
+                "Velocidade": v.get('velocidade'),
+                "Última Transmissão": v.get('data_transmissao')
+            })
+        
+        if map_data:
+            df_map = pd.DataFrame(map_data)
+            st.map(df_map)
+            st.dataframe(pd.DataFrame(status_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum veículo com coordenadas válidas para exibir no mapa.")
+
+with tab_aprov:
     st.subheader("Checklists Pendentes de Aprovação")
     pending_checklists = firestore_service.get_pending_checklists_for_gestor(display_uid)
     if not pending_checklists:
@@ -61,8 +102,10 @@ with tab1:
                 inconformidades = {item: status for item, status in checklist['items'].items() if status == "Não OK"}
                 for item, status in inconformidades.items():
                     st.warning(f"- {item.replace('_', ' ').capitalize()}: **{status}**")
+                
                 st.write("**Observações do Motorista:**")
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
+
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("✅ Aprovar Saída Mesmo Assim", key=f"approve_{checklist['doc_id']}", type="primary"):
@@ -77,28 +120,61 @@ with tab1:
                         st.error("Checklist reprovado e Ordem de Serviço criada.")
                         st.rerun()
 
-with tab2:
-    st.subheader("Histórico Completo de Checklists")
+with tab_hist:
+    st.subheader("Histórico de Checklists e Viagens")
+    
+    # Histórico de Checklists
     all_checklists = firestore_service.get_checklists_for_gestor(display_uid)
     if not all_checklists:
         st.info("Nenhum checklist encontrado no histórico.")
     else:
         display_data = [{'Data': item['timestamp'].strftime('%d/%m/%Y %H:%M'), 'Veículo': item.get('vehicle_plate', 'N/A'),
                          'Motorista': item.get('driver_email', 'N/A'), 'Status': item.get('status', 'N/A'),
+                         'Localização': item.get('location_status', 'N/A'),
                          'Observações': item.get('notes', '')} for item in all_checklists]
         df = pd.DataFrame(display_data)
         st.dataframe(df, use_container_width=True, hide_index=True)
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Baixar como CSV", csv, f'historico_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
+        st.download_button("📥 Baixar Histórico como CSV", csv, f'historico_checklists_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
 
-with tab3:
+    st.divider()
+
+    # Histórico de Viagens
+    st.subheader("Histórico Detalhado de Viagens por Veículo")
+    vehicles_from_api_hist = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+    if vehicles_from_api_hist:
+        plate_options = [v['placa'] for v in vehicles_from_api_hist]
+        col1, col2, col3 = st.columns([2,1,1])
+        with col1:
+            selected_plate = st.selectbox("Selecione um veículo", options=plate_options, key="hist_plate_select")
+        with col2:
+            selected_date = st.date_input("Selecione uma data")
+        with col3:
+            st.write("")
+            st.write("")
+            if st.button("Buscar Viagens"):
+                with st.spinner("Buscando histórico de viagens..."):
+                    trips = etrac_service.get_trip_summary(display_user_data.get('email'), display_user_data.get('etrac_api_key'), selected_plate, selected_date)
+                    if 'trip_summary' not in st.session_state:
+                        st.session_state.trip_summary = {}
+                    st.session_state.trip_summary[selected_plate] = trips
+        
+        # Exibe o resultado da busca
+        if 'trip_summary' in st.session_state and selected_plate in st.session_state.trip_summary:
+            trips = st.session_state.trip_summary[selected_plate]
+            if trips:
+                st.dataframe(trips, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma viagem encontrada para este veículo nesta data.")
+
+with tab_bi:
     st.subheader("Análise de Inconformidades (BI)")
-    all_checklists = firestore_service.get_checklists_for_gestor(display_uid)
-    if not all_checklists:
+    all_checklists_bi = firestore_service.get_checklists_for_gestor(display_uid)
+    if not all_checklists_bi:
         st.info("Não há dados de checklists para analisar.")
     else:
         failed_items, failed_vehicles = [], []
-        for checklist in all_checklists:
+        for checklist in all_checklists_bi:
             if checklist.get('status') and 'Aprovado' not in checklist.get('status'):
                 failed_vehicles.append(checklist.get('vehicle_plate'))
                 for item, status in checklist.get('items', {}).items():
@@ -123,8 +199,41 @@ with tab3:
             else:
                 st.success("Nenhum veículo com falhas!")
 
-with tab4:
+with tab_maint:
     st.subheader("Ordens de Serviço (Manutenção)")
+    # Manutenção Preventiva
+    with st.expander("Verificação de Manutenção Preventiva"):
+        st.info("Clique no botão abaixo para verificar todos os odômetros da frota contra os planos de manutenção cadastrados pelo Admin.")
+        if st.button("Verificar Odômetros e Criar Ordens de Serviço"):
+            with st.spinner("Verificando frota e planos de manutenção..."):
+                schedules = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
+                vehicles_with_odom = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+                created_os_count = 0
+                for vehicle in vehicles_with_odom:
+                    plate = vehicle.get('placa')
+                    if not plate or plate not in schedules: continue
+                    try:
+                        current_odom_str = vehicle.get('odometro', '0').replace('km', '').replace('.', '').replace(',', '.').strip()
+                        current_odom = float(current_odom_str)
+                    except (ValueError, TypeError):
+                        continue
+                    schedule = schedules[plate]
+                    last_km = schedule.get('last_maintenance_km', 0)
+                    threshold = schedule.get('threshold_km', 0)
+                    if threshold > 0 and current_odom > (last_km + threshold):
+                        os_data = {
+                            "vehicle_plate": plate, "driver_email": "SISTEMA", "gestor_uid": display_uid,
+                            "notes": f"Manutenção preventiva por odômetro. Limite de {threshold}km atingido. Última manutenção em {last_km}km. Odômetro atual: {current_odom}km.",
+                            "items": {schedule.get('notes', 'Manutenção Preventiva'): "Não OK"}
+                        }
+                        firestore_service.create_maintenance_order(os_data)
+                        firestore_service.update_maintenance_schedule(plate, {"last_maintenance_km": current_odom})
+                        created_os_count += 1
+                st.success(f"{created_os_count} ordens de serviço preventivas foram criadas/atualizadas.")
+    
+    st.divider()
+    # Manutenção Corretiva
+    st.subheader("Ordens de Serviço Corretivas (Checklists Reprovados)")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
         st.info("Nenhuma ordem de serviço encontrada.")
@@ -142,7 +251,7 @@ with tab4:
                     firestore_service.update_maintenance_order(order['doc_id'], updates)
                     st.success("Ordem de Serviço atualizada."); st.rerun()
 
-with tab5:
+with tab_motoristas:
     st.subheader("Gerenciar Equipe de Motoristas")
     if 'editing_driver_uid' in st.session_state:
         driver_to_edit = firestore_service.get_user(st.session_state.editing_driver_uid)
@@ -185,8 +294,7 @@ with tab5:
             for driver in drivers:
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                 is_active = driver.get('is_active', True)
-                with col1:
-                    st.write(driver['email'])
+                with col1: st.write(driver['email'])
                 with col2:
                     if is_active: st.success("✔️ Ativo")
                     else: st.error("❌ Desabilitado")
