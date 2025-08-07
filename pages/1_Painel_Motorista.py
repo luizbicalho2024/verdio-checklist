@@ -6,9 +6,9 @@ from datetime import datetime
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, etrac_service, notification_service, auth_service
+from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service
 
-st.set_page_config(page_title="Dashboard Motorista", layout="wide")
+st.set_page_config(page_title="Painel Motorista", layout="wide")
 
 if not st.session_state.get('logged_in'):
     st.warning("Por favor, faça o login para acessar esta página.")
@@ -80,12 +80,26 @@ if selected_vehicle_str:
                     "notes": notes,
                     "status": "Aprovado" if is_ok else "Pendente"
                 }
-                firestore_service.save_checklist(checklist_data)
-                firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
-                st.success("Checklist enviado com sucesso!")
                 
                 if is_ok:
                     st.balloons()
+                    plate = selected_vehicle_data['placa']
+                    serial = selected_vehicle_data.get('idRastreador')
+                    
+                    vehicle_details = firestore_service.get_vehicle_details_by_plate(plate)
+                    
+                    if vehicle_details and vehicle_details.get('tracker_sim_number'):
+                        sim_number = vehicle_details['tracker_sim_number']
+                        st.info(f"Todos os itens OK. Enviando comando de desbloqueio para o veículo {plate}...")
+                        twilio_service.send_unlock_sms(
+                            to_number=sim_number,
+                            equipamento_serial=serial,
+                            admin_email_logger=user_data['email']
+                        )
+                    else:
+                        st.error(f"ERRO: Não foi possível desbloquear o veículo {plate}. Nenhum número de chip está vinculado. Avise o administrador.")
+                        checklist_data['status'] = "Pendente"
+                        checklist_data['notes'] += "\n\n[SISTEMA] Falha no desbloqueio automático: Chip não cadastrado."
                 else:
                     st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
                     if gestor_data and gestor_data.get('email'):
@@ -97,3 +111,7 @@ if selected_vehicle_str:
                         <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>
                         """
                         notification_service.send_email_notification(gestor_data['email'], subject, body)
+
+                firestore_service.save_checklist(checklist_data)
+                firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
+                st.success("Checklist enviado com sucesso!")
