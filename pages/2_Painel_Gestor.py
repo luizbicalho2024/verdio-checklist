@@ -11,7 +11,6 @@ sys.path.append(os.getcwd())
 
 from services import firestore_service, auth_service
 
-# CONFIGURAÇÃO DA PÁGINA: TEMA LIGHT E MODO WIDE
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
 is_impersonating = False
@@ -40,14 +39,13 @@ if is_impersonating:
         if 'impersonated_uid' in st.session_state: del st.session_state['impersonated_uid']
         if 'impersonated_user_data' in st.session_state: del st.session_state['impersonated_user_data']
         st.switch_page("pages/3_Admin.py")
-
     st.warning(f"⚠️ Você está visualizando o painel como o gestor **{display_user_data.get('email')}**.", icon="👁️")
     if st.button("⬅️ Voltar ao Painel de Admin"):
         exit_impersonation_mode()
 
 st.title(f"📊 Painel do Gestor, {display_user_data.get('email')}")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Cadastrar Motorista"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"])
 
 with tab1:
     st.subheader("Checklists Pendentes de Aprovação")
@@ -145,17 +143,66 @@ with tab4:
                     st.success("Ordem de Serviço atualizada."); st.rerun()
 
 with tab5:
-    st.subheader("Cadastrar Novo Motorista")
-    with st.form("new_driver_form", clear_on_submit=True):
-        driver_email = st.text_input("Email do Motorista")
-        driver_password = st.text_input("Senha Provisória", type="password")
-        if st.form_submit_button("Cadastrar Motorista"):
-            if driver_email and driver_password:
-                if firestore_service.get_user_by_email(driver_email):
-                    st.error("Este email já está cadastrado.")
-                else:
-                    auth_service.create_user_with_password(driver_email, driver_password, 'motorista', gestor_uid=display_uid)
-                    firestore_service.log_action(st.session_state.user_data['email'], "CADASTRO_MOTORISTA", f"Motorista {driver_email} cadastrado para o gestor {display_user_data['email']}.")
-                    st.success(f"Motorista {driver_email} cadastrado com sucesso!")
-            else:
-                st.warning("Preencha todos os campos.")
+    st.subheader("Gerenciar Equipe de Motoristas")
+    if 'editing_driver_uid' in st.session_state:
+        driver_to_edit = firestore_service.get_user(st.session_state.editing_driver_uid)
+        st.markdown(f"### Editando Motorista: `{driver_to_edit['email']}`")
+        with st.form("edit_driver_form"):
+            new_email = st.text_input("Email do Motorista", value=driver_to_edit['email'])
+            new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
+            submitted = st.form_submit_button("Salvar Alterações")
+            if submitted:
+                auth_service.update_auth_user(st.session_state.editing_driver_uid, email=new_email, password=new_password if new_password else None)
+                firestore_service.update_user_data(st.session_state.editing_driver_uid, {'email': new_email})
+                st.success(f"Dados do motorista {new_email} atualizados.")
+                firestore_service.log_action(real_user_data['email'], "EDITAR_MOTORISTA", f"Editou dados de {new_email}.")
+                del st.session_state['editing_driver_uid']
+                st.rerun()
+        if st.button("Cancelar Edição"):
+            del st.session_state['editing_driver_uid']
+            st.rerun()
+    else:
+        with st.expander("➕ Adicionar Novo Motorista"):
+            with st.form("new_driver_form", clear_on_submit=True):
+                driver_email = st.text_input("Email do Novo Motorista")
+                driver_password = st.text_input("Senha Provisória", type="password")
+                if st.form_submit_button("Cadastrar Motorista"):
+                    if driver_email and driver_password:
+                        if firestore_service.get_user_by_email(driver_email):
+                            st.error("Este email já está cadastrado.")
+                        else:
+                            auth_service.create_user_with_password(driver_email, driver_password, 'motorista', gestor_uid=display_uid)
+                            firestore_service.log_action(real_user_data['email'], "CADASTRO_MOTORISTA", f"Cadastrou {driver_email}.")
+                            st.success(f"Motorista {driver_email} cadastrado com sucesso!")
+                    else:
+                        st.warning("Preencha todos os campos.")
+        st.divider()
+        st.subheader("Lista de Motoristas")
+        drivers = firestore_service.get_drivers_for_manager(display_uid)
+        if not drivers:
+            st.info("Nenhum motorista cadastrado para este gestor.")
+        else:
+            for driver in drivers:
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                is_active = driver.get('is_active', True)
+                with col1:
+                    st.write(driver['email'])
+                with col2:
+                    if is_active: st.success("✔️ Ativo")
+                    else: st.error("❌ Desabilitado")
+                with col3:
+                    if st.button("✏️ Editar", key=f"edit_{driver['uid']}", disabled=not is_active):
+                        st.session_state['editing_driver_uid'] = driver['uid']
+                        st.rerun()
+                with col4:
+                    if is_active:
+                        if st.button("Desabilitar", key=f"disable_{driver['uid']}"):
+                            auth_service.set_user_disabled_status(driver['uid'], is_disabled=True)
+                            firestore_service.update_user_data(driver['uid'], {'is_active': False})
+                            st.rerun()
+                    else:
+                        if st.button("Habilitar", key=f"enable_{driver['uid']}", type="primary"):
+                            auth_service.set_user_disabled_status(driver['uid'], is_disabled=False)
+                            firestore_service.update_user_data(driver['uid'], {'is_active': True})
+                            st.rerun()
+                st.divider()
