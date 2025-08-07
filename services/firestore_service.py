@@ -48,9 +48,20 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
 def update_user_data(uid, data_to_update):
     db.collection("users").document(uid).update(data_to_update)
 
+def update_user_totp_info(uid, secret, enabled):
+    db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
+
 def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
+
+# --- FUNÇÃO RESTAURADA ABAIXO ---
+def get_logs_paginated(limit=20, start_after_doc=None):
+    """Busca os logs de forma paginada para a tela do Admin."""
+    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
+    if start_after_doc:
+        query = query.start_after(start_after_doc)
+    return query.get()
 
 def save_checklist(data):
     return db.collection("checklists").add(data)
@@ -74,21 +85,17 @@ def update_checklist_status(doc_id, new_status, approver_email):
     })
 
 def get_checklist_template():
-    """Busca o modelo de checklist padrão."""
     doc_ref = db.collection("app_configs").document("checklist_template").get()
     if doc_ref.exists:
         return doc_ref.to_dict().get("items", [])
-    # Se não existir, retorna um padrão e cria no banco
     default_items = ["Pneus", "Luzes", "Freios", "Nível de Óleo", "Documentação"]
     db.collection("app_configs").document("checklist_template").set({"items": default_items})
     return default_items
 
 def update_checklist_template(items_list):
-    """Atualiza o modelo de checklist."""
     db.collection("app_configs").document("checklist_template").set({"items": items_list})
 
 def create_maintenance_order(checklist_data):
-    """Cria uma nova ordem de serviço a partir de um checklist reprovado."""
     order_data = {
         "created_at": datetime.now(),
         "status": "Aberta",
@@ -102,7 +109,6 @@ def create_maintenance_order(checklist_data):
     db.collection("maintenance_orders").add(order_data)
 
 def get_maintenance_orders_for_gestor(gestor_uid):
-    """Busca todas as ordens de serviço de um gestor."""
     query = db.collection("maintenance_orders").where("gestor_uid", "==", gestor_uid).order_by("created_at", direction=firestore.Query.DESCENDING)
     orders = []
     for doc in query.stream():
@@ -112,5 +118,4 @@ def get_maintenance_orders_for_gestor(gestor_uid):
     return orders
 
 def update_maintenance_order(doc_id, updates):
-    """Atualiza uma ordem de serviço."""
     db.collection("maintenance_orders").document(doc_id).update(updates)
