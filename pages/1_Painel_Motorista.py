@@ -6,7 +6,7 @@ from datetime import datetime
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, etrac_service, notification_service
+from services import firestore_service, etrac_service, notification_service, auth_service
 
 st.set_page_config(page_title="Dashboard Motorista", layout="wide")
 
@@ -19,7 +19,13 @@ if user_data.get('role') != 'motorista':
     st.error("Acesso negado.")
     st.stop()
 
-st.title(f"📋 Checklist Pré-Jornada, {user_data.get('email')}")
+with st.sidebar:
+    st.write(f"Logado como:")
+    st.markdown(f"**{user_data.get('email')}**")
+    if st.button("Sair", use_container_width=True):
+        auth_service.logout()
+
+st.title(f"📋 Checklist Pré-Jornada")
 
 gestor_uid = user_data.get('gestor_uid')
 if not gestor_uid:
@@ -39,7 +45,6 @@ if not vehicles:
     st.warning("Nenhum veículo foi retornado pela API da eTrac.")
     st.stop()
 
-# Busca o modelo de checklist dinâmico
 checklist_items_template = firestore_service.get_checklist_template()
 if not checklist_items_template:
     st.error("Modelo de checklist não encontrado. Contate o administrador.")
