@@ -6,7 +6,7 @@ import pandas as pd
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, auth_service
+from services import firestore_service, auth_service, etrac_service
 
 st.set_page_config(page_title="Painel Admin", layout="wide")
 
@@ -29,7 +29,7 @@ def clear_editing_state():
         del st.session_state['editing_user_uid']
     st.cache_data.clear()
 
-tab1, tab2, tab3, tab4 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📝 Gerenciar Checklist", "📜 Logs"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚙️ Gestão de Usuários", "👁️ Visualizar como Gestor", "📲 Vincular Chip", "📝 Gerenciar Checklist", "📜 Logs"])
 
 with tab1:
     st.subheader("Gerenciar Usuários (Gestores e Motoristas)")
@@ -142,6 +142,48 @@ with tab2:
             st.switch_page("pages/2_Painel_Gestor.py")
 
 with tab3:
+    st.subheader("Vincular Número do Chip ao Veículo")
+    st.info("Selecione um gestor para ver sua frota e associar o número de telefone do chip de cada rastreador.")
+    all_managers = firestore_service.get_all_managers()
+    if not all_managers:
+        st.warning("Nenhum gestor cadastrado para selecionar.")
+    else:
+        manager_opts = {manager['email']: manager for manager in all_managers}
+        selected_manager_email = st.selectbox("Selecione um gestor para ver a frota", options=manager_opts.keys())
+        selected_manager_data = manager_opts[selected_manager_email]
+        gestor_uid = selected_manager_data['uid']
+        api_key = selected_manager_data.get('etrac_api_key')
+        
+        if not api_key:
+            st.error("Este gestor não possui uma chave de API eTrac configurada.")
+        else:
+            vehicles = etrac_service.get_vehicles_from_etrac(selected_manager_email, api_key)
+            if not vehicles:
+                st.warning("Nenhum veículo encontrado para este gestor na API eTrac.")
+            else:
+                st.write(f"Exibindo {len(vehicles)} veículos para **{selected_manager_email}**.")
+                for vehicle in vehicles:
+                    plate = vehicle['placa']
+                    serial = vehicle.get('idRastreador', 'N/A')
+                    saved_data = firestore_service.get_vehicle_details_by_plate(plate)
+                    current_sim = saved_data['tracker_sim_number'] if saved_data and 'tracker_sim_number' in saved_data else ""
+                    
+                    col1, col2, col3 = st.columns([2, 2, 3])
+                    col1.text(f"Placa: {plate}")
+                    col2.text(f"Serial: {serial}")
+                    with col3.form(key=f"form_{plate}"):
+                        new_sim = st.text_input("Número do Chip (ex: +5569912345678)", value=current_sim, key=f"sim_{plate}")
+                        if st.form_submit_button("Salvar"):
+                            if new_sim and serial != 'N/A':
+                                firestore_service.update_vehicle_sim_number(plate, serial, new_sim, gestor_uid)
+                                st.success(f"Número do chip para a placa {plate} salvo!")
+                                firestore_service.log_action(user_data['email'], "VINCULO_CHIP", f"Chip {new_sim} vinculado ao veículo {plate}.")
+                                st.rerun()
+                            else:
+                                st.warning("Preencha o número do chip.")
+                    st.divider()
+
+with tab4:
     st.subheader("Gerenciar Modelo de Checklist Padrão")
     st.info("Edite os itens que os motoristas devem verificar. Salve para aplicar a todos os checklists futuros.")
     current_template = firestore_service.get_checklist_template()
@@ -153,7 +195,7 @@ with tab3:
         st.success("Modelo de checklist salvo com sucesso!")
         st.cache_data.clear()
 
-with tab4:
+with tab5:
     st.subheader("Logs de Auditoria")
     if 'last_log_doc' not in st.session_state:
         st.session_state.last_log_doc = None
