@@ -20,6 +20,7 @@ def handle_2fa_verification(uid, code):
         st.session_state['user_uid'] = uid
         st.session_state['user_data'] = firestore_service.get_user(uid)
         st.session_state['flow'] = 'logged_in'
+        # Não redirecionamos aqui, apenas preparamos o estado. O rerun fará o resto.
         st.rerun()
     else:
         st.error("Código 2FA inválido.")
@@ -28,8 +29,6 @@ def handle_registration(email, password):
     if firestore_service.get_user_by_email(email):
         st.error("Este email já está registrado.")
         return
-    # Motoristas que se auto-registram não são associados a um gestor inicialmente.
-    # A associação deve ser feita pelo Admin no painel de edição de usuários.
     user = auth_service.create_user_with_password(email, password, role='motorista')
     if user:
         st.success("Registro bem-sucedido! Faça o login.")
@@ -60,8 +59,13 @@ def enable_2fa_flow():
             else:
                 st.error("Código de verificação inválido.")
 
+# --- Roteador de Fluxo ---
 if 'flow' not in st.session_state:
     st.session_state['flow'] = 'login'
+
+# Se o usuário já está logado e acessa a página principal, redireciona-o
+if st.session_state.get('logged_in') and st.session_state.get('flow') != 'logged_in':
+    st.session_state['flow'] = 'logged_in'
 
 if st.session_state['flow'] == 'login':
     st.title("Login do Sistema de Checklist")
@@ -102,19 +106,41 @@ elif st.session_state['flow'] == 'verify_2fa':
         st.session_state.update({'logged_in': True, 'user_uid': uid, 'user_data': firestore_service.get_user(uid), 'flow': 'logged_in'})
         st.rerun()
 
+# --- BLOCO DE CÓDIGO ALTERADO ---
 elif st.session_state['flow'] == 'logged_in':
-    user_data = st.session_state.user_data
-    st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
-    st.write(f"Você está logado como: **{user_data.get('role', 'N/A').capitalize()}**")
-    st.info("Navegue para seu dashboard usando o menu à esquerda.")
-    if not user_data.get('totp_enabled'):
-        if st.button("🔒 Ativar Autenticação de Dois Fatores"):
-            st.session_state['flow'] = 'enable_2fa'
+    # Em vez de mostrar uma mensagem de boas-vindas aqui,
+    # verificamos se o redirecionamento já foi feito.
+    if 'redirected' not in st.session_state:
+        st.session_state['redirected'] = True
+        role = st.session_state.user_data.get('role')
+
+        # Redireciona com base no papel do usuário
+        if role == 'motorista':
+            st.switch_page("pages/1_Dashboard_Motorista.py")
+        elif role == 'gestor':
+            st.switch_page("pages/2_Painel_Gestor.py")
+        elif role == 'admin':
+            st.switch_page("pages/3_Admin.py")
+        else:
+            st.error("Papel de usuário desconhecido. Contate o suporte.")
+            if st.button("Sair"):
+                st.session_state.clear(); st.session_state['flow'] = 'login'; st.rerun()
+    
+    # Se o usuário já foi redirecionado e voltou para a página inicial,
+    # mostramos o painel de logout e 2FA.
+    else:
+        user_data = st.session_state.user_data
+        st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
+        st.info("Você já está logado. Use o menu à esquerda para navegar.")
+        if not user_data.get('totp_enabled'):
+            if st.button("🔒 Ativar Autenticação de Dois Fatores"):
+                st.session_state['flow'] = 'enable_2fa'
+                st.rerun()
+        if st.button("Sair"):
+            st.session_state.clear()
+            st.session_state['flow'] = 'login'
             st.rerun()
-    if st.button("Sair"):
-        st.session_state.clear()
-        st.session_state['flow'] = 'login'
-        st.rerun()
+# --- FIM DO BLOCO ALTERADO ---
 
 elif st.session_state['flow'] == 'enable_2fa':
     enable_2fa_flow()
