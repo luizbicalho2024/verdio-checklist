@@ -11,7 +11,8 @@ sys.path.append(os.getcwd())
 
 from services import firestore_service, auth_service
 
-st.set_page_config(page_title="Dashboard Gestor", layout="wide")
+# CONFIGURAÇÃO DA PÁGINA: TEMA LIGHT E MODO WIDE
+st.set_page_config(page_title="Painel Gestor", layout="wide")
 
 is_impersonating = False
 if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
