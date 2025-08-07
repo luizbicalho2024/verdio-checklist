@@ -18,13 +18,21 @@ if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_s
     is_impersonating = True
     display_user_data = st.session_state.get('impersonated_user_data', {})
     display_uid = st.session_state.get('impersonated_uid')
+    real_user_data = st.session_state.get('user_data', {})
 else:
-    if not st.session_state.get('logged_in'):
-        st.warning("Faça o login."); st.stop()
+    if not st.session_state.get('logged_in'): st.warning("Faça o login."); st.stop()
     display_user_data = st.session_state.get('user_data', {})
     display_uid = st.session_state.get('user_uid')
-    if display_user_data.get('role') != 'gestor':
-        st.error("Acesso negado."); st.stop()
+    real_user_data = display_user_data
+    if display_user_data.get('role') != 'gestor': st.error("Acesso negado."); st.stop()
+
+with st.sidebar:
+    st.write(f"Logado como:")
+    st.markdown(f"**{real_user_data.get('email')}**")
+    if is_impersonating:
+        st.info(f"Visualizando como:\n**{display_user_data.get('email')}**")
+    if st.button("Sair", use_container_width=True):
+        auth_service.logout()
 
 if is_impersonating:
     def exit_impersonation_mode():
@@ -80,7 +88,7 @@ with tab2:
                          'Motorista': item.get('driver_email', 'N/A'), 'Status': item.get('status', 'N/A'),
                          'Observações': item.get('notes', '')} for item in all_checklists]
         df = pd.DataFrame(display_data)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Baixar como CSV", csv, f'historico_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
 
