@@ -27,7 +27,6 @@ def get_all_managers():
     return managers_list
 
 def get_drivers_for_manager(gestor_uid):
-    """Busca todos os motoristas associados a um gestor específico."""
     query = db.collection("users").where("role", "==", "motorista").where("gestor_uid", "==", gestor_uid)
     drivers_list = []
     for doc in query.stream():
@@ -139,3 +138,19 @@ def update_vehicle_sim_number(plate, serial, sim_number, gestor_uid):
 def get_vehicle_details_by_plate(plate):
     doc_ref = db.collection("vehicles").document(plate).get()
     return doc_ref.to_dict() if doc_ref.exists else None
+
+def save_geofence_settings(lat, lon, radius):
+    db.collection("app_configs").document("geofence_settings").set({
+        "latitude": lat, "longitude": lon, "radius_meters": radius
+    })
+
+def get_geofence_settings():
+    doc_ref = db.collection("app_configs").document("geofence_settings").get()
+    return doc_ref.to_dict() if doc_ref.exists else None
+
+def update_maintenance_schedule(plate, data):
+    db.collection("maintenance_schedules").document(plate).set(data, merge=True)
+
+def get_maintenance_schedules_for_gestor(gestor_uid):
+    query = db.collection("maintenance_schedules").where("gestor_uid", "==", gestor_uid).stream()
+    return {doc.id: doc.to_dict() for doc in query}
