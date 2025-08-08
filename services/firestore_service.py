@@ -58,20 +58,9 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
 def update_user_data(uid, data_to_update):
     db.collection("users").document(uid).update(data_to_update)
 
-def update_user_totp_info(uid, secret, enabled):
-    db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
-
 def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
-
-# --- FUNÇÃO RESTAURADA ABAIXO ---
-def get_logs_paginated(limit=20, start_after_doc=None):
-    """Busca os logs de forma paginada para a tela do Admin."""
-    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-    if start_after_doc:
-        query = query.start_after(start_after_doc)
-    return query.get()
 
 def save_checklist(data):
     return db.collection("checklists").add(data)
@@ -81,7 +70,7 @@ def get_checklists_for_gestor(gestor_uid):
     return [doc.to_dict() for doc in query.stream()]
 
 def get_pending_checklists_for_gestor(gestor_uid):
-    query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
+    query = db.collection("checklists").where("gestor_uid", "==", "gestor_uid").where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
     checklists = []
     for doc in query.stream():
         checklist_data = doc.to_dict()
@@ -151,6 +140,9 @@ def get_geofence_settings():
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def update_maintenance_schedule(plate, data):
+    # Adiciona um campo para controle de notificação ao criar um novo plano
+    if 'threshold_km' in data and 'last_maintenance_km' in data:
+        data['notification_sent_for_km'] = data['last_maintenance_km']
     db.collection("maintenance_schedules").document(plate).set(data, merge=True)
 
 def get_maintenance_schedules_for_gestor(gestor_uid):
@@ -158,10 +150,9 @@ def get_maintenance_schedules_for_gestor(gestor_uid):
     return {doc.id: doc.to_dict() for doc in query}
 
 def delete_maintenance_schedule(plate):
-    """Exclui um plano de manutenção preventiva pela placa."""
     try:
         db.collection("maintenance_schedules").document(plate).delete()
         return True
     except Exception as e:
-        print(f"Erro ao excluir plano de manutenção para a placa {plate}: {e}")
+        print(f"Erro ao excluir plano: {e}")
         return False
