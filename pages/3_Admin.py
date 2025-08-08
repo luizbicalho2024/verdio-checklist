@@ -39,14 +39,17 @@ with tab1:
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
+        
         st.markdown(f"### Editando: `{user_to_edit['email']}`")
         with st.form("edit_user_form"):
             new_email = st.text_input("Email", value=user_to_edit['email'])
             new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
             new_role = st.selectbox("Papel", options=['motorista', 'gestor'], index=['motorista', 'gestor'].index(user_to_edit['role']))
+            
             new_etrac_api_key = user_to_edit.get('etrac_api_key', '')
             if new_role == 'gestor':
                 new_etrac_api_key = st.text_input("Chave da API eTrac", value=new_etrac_api_key)
+
             new_gestor_uid = None
             if new_role == 'motorista':
                 all_managers = firestore_service.get_all_managers()
@@ -61,6 +64,7 @@ with tab1:
                     new_gestor_uid = managers_dict[selected_manager_email]
                 else:
                     st.warning("Nenhum gestor cadastrado para associar este motorista.")
+
             submitted = st.form_submit_button("Salvar Alterações")
             if submitted:
                 firestore_updates = {'email': new_email, 'role': new_role}
@@ -70,9 +74,11 @@ with tab1:
                 if new_role == 'motorista':
                     firestore_updates['gestor_uid'] = new_gestor_uid
                     if 'etrac_api_key' in user_to_edit: firestore_updates['etrac_api_key'] = None
+                
                 firestore_service.update_user_data(uid_to_edit, firestore_updates)
                 auth_service.update_auth_user(uid_to_edit, email=new_email, password=new_password if new_password else None)
                 auth_service.update_user_role_and_claims(uid_to_edit, new_role, new_gestor_uid if new_role == 'motorista' else None)
+                
                 st.success(f"Usuário {new_email} atualizado com sucesso!")
                 firestore_service.log_action(user_data['email'], "EDITAR_USUARIO", f"Dados de {new_email} foram alterados.")
                 clear_editing_state()
@@ -105,7 +111,8 @@ with tab1:
             for user_row in all_users:
                 with st.container():
                     c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                    c1.write(user_row['email']); c2.write(user_row['role'])
+                    c1.write(user_row['email'])
+                    c2.write(user_row['role'])
                     with c3:
                         gestor_email_display = ""
                         gestor_uid = user_row.get('gestor_uid')
@@ -211,24 +218,30 @@ with tab6:
         selected_manager_data = manager_opts[selected_manager_email]
         gestor_uid = selected_manager_data['uid']
         api_key = selected_manager_data.get('etrac_api_key')
-        vehicles = etrac_service.get_vehicles_from_etrac(selected_manager_email, api_key)
-        schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
-        if vehicles:
-            for v in vehicles:
-                plate = v['placa']
-                schedule = schedules.get(plate, {})
-                with st.expander(f"Plano para {plate}"):
-                    with st.form(key=f"maint_form_{plate}"):
-                        threshold = st.number_input("Alertar a cada (km)", min_value=1000, value=schedule.get('threshold_km', 10000), step=500)
-                        last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0, value=schedule.get('last_maintenance_km', 0))
-                        notes = st.text_area("Descrição do Plano (ex: Troca de óleo e filtros)", value=schedule.get('notes', ''))
-                        if st.form_submit_button("Salvar Plano"):
-                            plan_data = {
-                                "gestor_uid": gestor_uid, "threshold_km": threshold,
-                                "last_maintenance_km": last_km, "notes": notes
-                            }
-                            firestore_service.update_maintenance_schedule(plate, plan_data)
-                            st.success(f"Plano de manutenção para {plate} salvo."); st.rerun()
+        if api_key:
+            vehicles = etrac_service.get_vehicles_from_etrac(selected_manager_email, api_key)
+            schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
+            if vehicles:
+                # --- CORREÇÃO 1: Usar enumerate para chaves únicas ---
+                for i, v in enumerate(vehicles):
+                    plate = v['placa']
+                    schedule = schedules.get(plate, {})
+                    with st.expander(f"Plano para {plate}"):
+                        # --- CORREÇÃO 2: Garantir que os valores são float ---
+                        threshold_val = float(schedule.get('threshold_km', 10000))
+                        last_km_val = float(schedule.get('last_maintenance_km', 0))
+                        
+                        with st.form(key=f"maint_form_{plate}_{i}"):
+                            threshold = st.number_input("Alertar a cada (km)", min_value=1000.0, value=threshold_val, step=500.0)
+                            last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0.0, value=last_km_val)
+                            notes = st.text_area("Descrição do Plano (ex: Troca de óleo e filtros)", value=schedule.get('notes', ''))
+                            if st.form_submit_button("Salvar Plano"):
+                                plan_data = {
+                                    "gestor_uid": gestor_uid, "threshold_km": threshold,
+                                    "last_maintenance_km": last_km, "notes": notes
+                                }
+                                firestore_service.update_maintenance_schedule(plate, plan_data)
+                                st.success(f"Plano de manutenção para {plate} salvo."); st.rerun()
 
 with tab7:
     st.subheader("Logs de Auditoria")
