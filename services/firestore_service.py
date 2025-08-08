@@ -3,18 +3,6 @@ from datetime import datetime
 from firebase_admin import firestore
 from .firebase_config import db
 
-# --- FUNÇÃO DE EXCLUSÃO ADICIONADA ---
-def delete_maintenance_schedule(plate):
-    """Exclui um plano de manutenção preventiva pela placa."""
-    try:
-        db.collection("maintenance_schedules").document(plate).delete()
-        return True
-    except Exception as e:
-        print(f"Erro ao excluir plano de manutenção para a placa {plate}: {e}")
-        return False
-
-# --- RESTO DO ARQUIVO (sem alterações) ---
-
 def get_user(uid):
     doc_ref = db.collection("users").document(uid).get()
     return doc_ref.to_dict() if doc_ref.exists else None
@@ -70,9 +58,20 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
 def update_user_data(uid, data_to_update):
     db.collection("users").document(uid).update(data_to_update)
 
+def update_user_totp_info(uid, secret, enabled):
+    db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
+
 def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
+
+# --- FUNÇÃO RESTAURADA ABAIXO ---
+def get_logs_paginated(limit=20, start_after_doc=None):
+    """Busca os logs de forma paginada para a tela do Admin."""
+    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
+    if start_after_doc:
+        query = query.start_after(start_after_doc)
+    return query.get()
 
 def save_checklist(data):
     return db.collection("checklists").add(data)
@@ -157,3 +156,12 @@ def update_maintenance_schedule(plate, data):
 def get_maintenance_schedules_for_gestor(gestor_uid):
     query = db.collection("maintenance_schedules").where("gestor_uid", "==", gestor_uid).stream()
     return {doc.id: doc.to_dict() for doc in query}
+
+def delete_maintenance_schedule(plate):
+    """Exclui um plano de manutenção preventiva pela placa."""
+    try:
+        db.collection("maintenance_schedules").document(plate).delete()
+        return True
+    except Exception as e:
+        print(f"Erro ao excluir plano de manutenção para a placa {plate}: {e}")
+        return False
