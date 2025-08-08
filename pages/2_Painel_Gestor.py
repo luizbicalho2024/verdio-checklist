@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, auth_service, etrac_service
+from services import firestore_service, auth_service, etrac_service, notification_service
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
@@ -47,12 +47,60 @@ if is_impersonating:
 
 st.title(f"📊 Painel do Gestor, {display_user_data.get('email')}")
 
+# --- FUNÇÃO DE VERIFICAÇÃO DE MANUTENÇÃO ---
+def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
+    schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
+    if not schedules:
+        return
+    vehicles = etrac_service.get_vehicles_from_etrac(gestor_email, api_key)
+    if not vehicles:
+        return
+
+    overdue_vehicles = []
+    for vehicle in vehicles:
+        plate = vehicle.get('placa')
+        if not plate or plate not in schedules:
+            continue
+        
+        try:
+            current_odom_str = vehicle.get('odometro', '0').replace('km', '').replace('.', '').replace(',', '.').strip()
+            current_odom = float(current_odom_str)
+        except (ValueError, TypeError):
+            continue
+
+        schedule = schedules[plate]
+        last_km = float(schedule.get('last_maintenance_km', 0))
+        threshold = float(schedule.get('threshold_km', 0))
+        notified_km = float(schedule.get('notification_sent_for_km', last_km))
+
+        if threshold > 0 and current_odom > (last_km + threshold) and notified_km < (last_km + threshold):
+            overdue_vehicles.append({
+                "placa": plate,
+                "odometro_atual": int(current_odom),
+                "limite_km": int(last_km + threshold),
+                "plano_desc": schedule.get('notes', 'Manutenção Preventiva')
+            })
+            firestore_service.update_maintenance_schedule(plate, {"notification_sent_for_km": last_km + threshold})
+
+    if overdue_vehicles:
+        for v in overdue_vehicles:
+            st.toast(f"🚨 Alerta: Manutenção para {v['placa']} vencida!", icon="🚨")
+        
+        subject = "Alerta de Manutenção Preventiva Vencida"
+        email_body = "<h3>Os seguintes veículos ultrapassaram o odômetro para a manutenção programada:</h3><ul>"
+        for v in overdue_vehicles:
+            email_body += f"<li><b>Veículo:</b> {v['placa']}<br><b>Manutenção:</b> {v['plano_desc']}<br><b>Odômetro Atual:</b> {v['odometro_atual']} km<br><b>Limite:</b> {v['limite_km']} km</li>"
+        email_body += "</ul><p>Por favor, crie uma Ordem de Serviço no painel de manutenção.</p>"
+        
+        notification_service.send_email_notification(gestor_email, subject, email_body)
+        firestore_service.log_action(gestor_email, "ALERTA_MANUTENCAO", f"{len(overdue_vehicles)} veículos com manutenção vencida.")
+
+# --- RENDERIZAÇÃO DAS ABAS ---
 tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas = st.tabs([
     "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"
 ])
 
 with tab_mapa:
-    # ... (código da aba Mapa como antes)
     st.subheader("Localização da Frota em Tempo Real")
     if st.button("Atualizar Posições"):
         st.cache_data.clear()
@@ -89,7 +137,6 @@ with tab_mapa:
             st.info("Nenhum veículo com coordenadas válidas para exibir no mapa.")
 
 with tab_aprov:
-    # ... (código da aba Aprovações como antes)
     st.subheader("Checklists Pendentes de Aprovação")
     pending_checklists = firestore_service.get_pending_checklists_for_gestor(display_uid)
     if not pending_checklists:
@@ -103,6 +150,7 @@ with tab_aprov:
                 inconformidades = {item: status for item, status in checklist['items'].items() if status == "Não OK"}
                 for item, status in inconformidades.items():
                     st.warning(f"- {item.replace('_', ' ').capitalize()}: **{status}**")
+                
                 st.write("**Observações do Motorista:**")
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
                 col1, col2 = st.columns(2)
@@ -120,7 +168,6 @@ with tab_aprov:
                         st.rerun()
 
 with tab_hist:
-    # ... (código da aba Histórico como antes)
     st.subheader("Histórico de Checklists e Viagens")
     all_checklists = firestore_service.get_checklists_for_gestor(display_uid)
     if not all_checklists:
@@ -160,7 +207,6 @@ with tab_hist:
                 st.info("Nenhuma viagem encontrada para este veículo nesta data.")
 
 with tab_bi:
-    # ... (código da aba Análise/BI como antes)
     st.subheader("Análise de Inconformidades (BI)")
     all_checklists_bi = firestore_service.get_checklists_for_gestor(display_uid)
     if not all_checklists_bi:
@@ -193,36 +239,17 @@ with tab_bi:
                 st.success("Nenhum veículo com falhas!")
 
 with tab_maint:
-    st.subheader("Ordens de Serviço (Manutenção)")
-    with st.expander("Verificação de Manutenção Preventiva"):
-        st.info("Clique para verificar todos os odômetros da frota contra os planos de manutenção e criar Ordens de Serviço se necessário.")
-        if st.button("Verificar e Criar OS Preventivas"):
-            with st.spinner("Verificando frota e planos de manutenção..."):
-                schedules = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
-                vehicles_with_odom = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
-                created_os_count = 0
-                for vehicle in vehicles_with_odom:
-                    plate = vehicle.get('placa')
-                    if not plate or plate not in schedules: continue
-                    try:
-                        current_odom_str = vehicle.get('odometro', '0').replace('km', '').replace('.', '').replace(',', '.').strip()
-                        current_odom = float(current_odom_str)
-                    except (ValueError, TypeError): continue
-                    schedule = schedules[plate]
-                    last_km = schedule.get('last_maintenance_km', 0)
-                    threshold = schedule.get('threshold_km', 0)
-                    if threshold > 0 and current_odom > (last_km + threshold):
-                        os_data = {
-                            "vehicle_plate": plate, "driver_email": "SISTEMA", "gestor_uid": display_uid,
-                            "notes": f"Manutenção preventiva por odômetro. Limite de {threshold}km atingido. Última manutenção em {last_km}km. Odômetro atual: {current_odom}km.",
-                            "items": {schedule.get('notes', 'Manutenção Preventiva'): "Não OK"}
-                        }
-                        firestore_service.create_maintenance_order(os_data)
-                        firestore_service.update_maintenance_schedule(plate, {"last_maintenance_km": current_odom})
-                        created_os_count += 1
-                st.success(f"{created_os_count} ordens de serviço preventivas foram criadas/atualizadas.")
+    st.subheader("Manutenção")
+    # Dispara a verificação de alertas uma vez por sessão ao entrar na aba
+    if 'maint_check_done' not in st.session_state:
+        with st.spinner("Verificando alertas de manutenção..."):
+            check_for_maintenance_alerts(
+                gestor_uid=display_uid,
+                gestor_email=display_user_data.get('email'),
+                api_key=display_user_data.get('etrac_api_key')
+            )
+        st.session_state.maint_check_done = True
     
-    st.divider()
     st.subheader("Ordens de Serviço Corretivas e Preventivas")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
@@ -242,28 +269,22 @@ with tab_maint:
                     st.success("Ordem de Serviço atualizada."); st.rerun()
     st.divider()
     with st.expander("Gerenciar Planos de Manutenção Preventiva"):
-        vehicles_maint = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
-        schedules_maint = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
-
         if 'editing_schedule_plate' in st.session_state:
             plate_to_edit = st.session_state.editing_schedule_plate
-            schedule_to_edit = schedules_maint.get(plate_to_edit, {})
-            
-            # --- MELHORIA APLICADA AQUI ---
-            # Encontra o odômetro atual para o veículo que está sendo editado
-            vehicle_info = next((v for v in vehicles_maint if v['placa'] == plate_to_edit), None)
+            schedules = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
+            schedule_to_edit = schedules.get(plate_to_edit, {})
+            vehicles_maint_list = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+            vehicle_info = next((v for v in vehicles_maint_list if v['placa'] == plate_to_edit), None)
             current_odometer = "N/A"
             if vehicle_info:
                 current_odometer = vehicle_info.get('odometro', 'N/A')
 
             st.markdown(f"#### Editando Plano para `{plate_to_edit}`")
             st.info(f"Odômetro atual deste veículo: **{current_odometer}**")
-            
             with st.form(key=f"maint_form_{plate_to_edit}"):
                 threshold = st.number_input("Alertar a cada (km)", min_value=1000.0, value=float(schedule_to_edit.get('threshold_km', 10000)), step=500.0)
                 last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0.0, value=float(schedule_to_edit.get('last_maintenance_km', 0)))
                 notes = st.text_area("Descrição do Plano (ex: Troca de óleo e filtros)", value=schedule_to_edit.get('notes', ''))
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button("Salvar Plano"):
@@ -277,6 +298,8 @@ with tab_maint:
                         del st.session_state['editing_schedule_plate']
                         st.rerun()
         else:
+            vehicles_maint = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+            schedules_maint = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
             if vehicles_maint:
                 for v in vehicles_maint:
                     plate = v['placa']
@@ -298,7 +321,6 @@ with tab_maint:
                     st.divider()
 
 with tab_motoristas:
-    # ... (código da aba Gerenciar Motoristas como antes) ...
     st.subheader("Gerenciar Equipe de Motoristas")
     if 'editing_driver_uid' in st.session_state:
         driver_to_edit = firestore_service.get_user(st.session_state.editing_driver_uid)
