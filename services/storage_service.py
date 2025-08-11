@@ -1,31 +1,33 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 from firebase_admin import storage
 from uuid import uuid4
 
-def upload_file_to_storage(file, user_uid):
+def upload_file(file, destination_path):
     """
-    Faz upload de um arquivo para o Firebase Storage e retorna a URL pública.
+    Faz upload de um objeto de arquivo para o Firebase Storage.
+    
+    Args:
+        file: O objeto de arquivo (do st.camera_input).
+        destination_path: O caminho no Storage onde o arquivo será salvo.
+
+    Returns:
+        A URL pública do arquivo enviado ou None se falhar.
     """
     if file is None:
         return None
     try:
-        # Pega o bucket padrão do Firebase Storage
         bucket = storage.bucket()
+        blob = bucket.blob(destination_path)
         
-        # Gera um nome de arquivo único para evitar conflitos
-        file_extension = file.name.split('.')[-1]
-        file_name = f"checklists/{user_uid}/{uuid4()}.{file_extension}"
+        # O st.camera_input retorna um objeto BytesIO, então usamos upload_from_file
+        file.seek(0)
+        blob.upload_from_file(file, content_type='image/jpeg')
         
-        # Cria um blob (objeto) no bucket
-        blob = bucket.blob(file_name)
-        
-        # Faz o upload do conteúdo do arquivo
-        blob.upload_from_file(file, content_type=file.type)
-        
-        # Torna o arquivo publicamente acessível (você pode querer usar URLs assinadas para mais segurança)
+        # Torna o arquivo publicamente acessível
         blob.make_public()
         
         return blob.public_url
     except Exception as e:
-        st.error(f"Erro no upload da imagem: {e}")
+        st.error(f"Erro no upload do arquivo: {e}")
         return None
