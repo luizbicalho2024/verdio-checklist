@@ -14,6 +14,9 @@ from services import firestore_service, auth_service, etrac_service, notificatio
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
+# --- CSS PARA OCULTAR A SIDEBAR ---
+st.markdown("""<style> [data-testid="stSidebar"] { display: none; } </style>""", unsafe_allow_html=True)
+
 # --- LÓGICA DE IMPERSONIFICAÇÃO E LOGIN ---
 is_impersonating = False
 if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
@@ -31,13 +34,16 @@ else:
         st.error("Acesso negado.")
         st.stop()
 
-with st.sidebar:
-    st.write(f"Logado como:")
-    st.markdown(f"**{real_user_data.get('email')}**")
-    if is_impersonating:
-        st.info(f"Visualizando como:\n**{display_user_data.get('email')}**")
-    if st.button("Sair", use_container_width=True):
+# --- CABEÇALHO COM TÍTULO E BOTÃO SAIR ---
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.title(f"📊 Painel do Gestor")
+with col2:
+    st.write("")
+    if st.button("Sair 🚪", use_container_width=True):
         auth_service.logout()
+st.caption(f"Gestor: {display_user_data.get('email')}")
+
 
 if is_impersonating:
     def exit_impersonation_mode():
@@ -48,8 +54,7 @@ if is_impersonating:
     if st.button("⬅️ Voltar ao Painel de Admin"):
         exit_impersonation_mode()
 
-st.title(f"📊 Painel do Gestor, {display_user_data.get('email')}")
-
+# --- FUNÇÃO DE VERIFICAÇÃO DE MANUTENÇÃO ---
 def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
     schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
     if not schedules:
@@ -63,18 +68,22 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
         plate = vehicle.get('placa')
         if not plate or plate not in schedules:
             continue
+        
         try:
             current_odom_str = vehicle.get('odometro', '0').replace('km', '').replace('.', '').replace(',', '.').strip()
             current_odom = float(current_odom_str)
         except (ValueError, TypeError):
             continue
+
         schedule = schedules[plate]
         last_km = float(schedule.get('last_maintenance_km', 0))
         threshold = float(schedule.get('threshold_km', 0))
         alert_range = float(schedule.get('alert_range_km', 0))
         notified_km = float(schedule.get('notification_sent_for_km', last_km))
+        
         next_maintenance_km = last_km + threshold
         alert_starts_at_km = next_maintenance_km - alert_range
+
         if threshold > 0 and current_odom >= alert_starts_at_km and notified_km < alert_starts_at_km:
             overdue_vehicles.append({
                 "placa": plate, "odometro_atual": int(current_odom),
@@ -88,6 +97,7 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
             }
             firestore_service.create_maintenance_order(os_data)
             firestore_service.update_maintenance_schedule(plate, {"notification_sent_for_km": next_maintenance_km})
+    
     if overdue_vehicles:
         for v in overdue_vehicles:
             st.toast(f"🚨 Alerta: Manutenção para {v['placa']} está próxima!", icon="🚨")
@@ -99,6 +109,7 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
         notification_service.send_email_notification(gestor_email, subject, email_body)
         firestore_service.log_action(gestor_email, "ALERTA_MANUTENCAO", f"{len(overdue_vehicles)} veículos com manutenção próxima.")
 
+# --- RENDERIZAÇÃO DAS ABAS ---
 tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas = st.tabs([
     "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"
 ])
@@ -107,10 +118,13 @@ with tab_mapa:
     st.subheader("Localização da Frota em Tempo Real")
     if st.button("Atualizar Posições"):
         st.cache_data.clear()
+
     @st.cache_data(ttl=120)
     def get_vehicles_cached(email, api_key):
         return etrac_service.get_vehicles_from_etrac(email, api_key)
+
     vehicles_list = get_vehicles_cached(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+    
     if not vehicles_list:
         st.warning("Nenhum veículo encontrado para exibir no mapa.")
     else:
@@ -120,6 +134,7 @@ with tab_mapa:
             if lat and lon and str(lat).strip() and str(lon).strip():
                 try: map_data.append({'lat': float(lat), 'lon': float(lon)})
                 except (ValueError, TypeError): continue
+            
             ignicao_status = "✔️ Ligada" if v.get('ignicao') == 1 else "❌ Desligada"
             bateria_status = f"{v.get('bateria')}V"
             status_data.append({
@@ -127,6 +142,7 @@ with tab_mapa:
                 "Ignição": ignicao_status, "Bateria": bateria_status, "Velocidade": v.get('velocidade'),
                 "Última Transmissão": v.get('data_transmissao')
             })
+        
         if map_data:
             df_map = pd.DataFrame(map_data)
             st.map(df_map)
@@ -150,6 +166,7 @@ with tab_aprov:
                         st.warning(f"- {item_name.replace('_', ' ').capitalize()}: **{item_data['status']}**")
                         if item_data.get('photo_url'):
                             st.image(item_data['photo_url'], caption=f"Foto para {item_name}", width=300)
+                
                 st.write("**Observações do Motorista:**")
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
                 col1, col2 = st.columns(2)
@@ -243,8 +260,13 @@ with tab_maint:
     st.subheader("Manutenção")
     if 'maint_check_done' not in st.session_state:
         with st.spinner("Verificando alertas de manutenção..."):
-            check_for_maintenance_alerts(gestor_uid=display_uid, gestor_email=display_user_data.get('email'), api_key=display_user_data.get('etrac_api_key'))
+            check_for_maintenance_alerts(
+                gestor_uid=display_uid,
+                gestor_email=display_user_data.get('email'),
+                api_key=display_user_data.get('etrac_api_key')
+            )
         st.session_state.maint_check_done = True
+    
     st.subheader("Ordens de Serviço Corretivas e Preventivas")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
