@@ -11,9 +11,10 @@ from utils import geo_util
 
 st.set_page_config(page_title="Painel Motorista", layout="wide")
 
+# --- BLOCO DE VERIFICAÇÃO ATUALIZADO ---
+# Se o usuário não estiver logado, redireciona para a página de login.
 if not st.session_state.get('logged_in'):
-    st.warning("Por favor, faça o login para acessar esta página.")
-    st.stop()
+    st.switch_page("app.py")
 
 user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'motorista':
@@ -118,11 +119,12 @@ if selected_vehicle_str:
                     st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
                     if gestor_data and gestor_data.get('email'):
                         subject = f"Alerta: Checklist Pendente para o Veículo {selected_vehicle_data['placa']}"
-                        body = f"""<h3>Checklist com Inconformidades</h3>
-                                 <p>O motorista <b>{user_data['email']}</b> submeteu um checklist para o veículo <b>{selected_vehicle_data['placa']}</b> que requer sua atenção.</p>
-                                 <p><b>Localização:</b> {location_status}</p>
-                                 <p><b>Observações:</b> {notes}</p>
-                                 <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
+                        body = f"""
+                        <h3>Checklist com Inconformidades</h3>
+                        <p>O motorista <b>{user_data['email']}</b> submeteu um checklist para o veículo <b>{selected_vehicle_data['placa']}</b> que requer sua atenção.</p>
+                        <p><b>Localização:</b> {location_status}</p>
+                        <p><b>Observações:</b> {notes}</p>
+                        <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
                         notification_service.send_email_notification(gestor_data['email'], subject, body)
 
                 firestore_service.save_checklist(checklist_data)
