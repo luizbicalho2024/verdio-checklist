@@ -65,16 +65,13 @@ def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
 
-# --- FUNÇÃO RESTAURADA ABAIXO ---
 def get_logs_paginated(limit=20, start_after_doc=None):
-    """Busca os logs de forma paginada para a tela do Admin."""
     query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
     if start_after_doc:
         query = query.start_after(start_after_doc)
     return query.get()
 
 def save_checklist(data):
-    """Salva um novo checklist e retorna o ID do documento criado."""
     try:
         _, doc_ref = db.collection("checklists").add(data)
         return doc_ref.id
@@ -83,7 +80,6 @@ def save_checklist(data):
         return None
 
 def update_checklist_with_photos(doc_id, photo_updates):
-    """Atualiza um checklist existente com as URLs das fotos."""
     db.collection("checklists").document(doc_id).update(photo_updates)
 
 def get_checklists_for_gestor(gestor_uid):
@@ -104,16 +100,27 @@ def update_checklist_status(doc_id, new_status, approver_email):
         "status": new_status, "approved_by": approver_email, "approval_timestamp": datetime.now()
     })
 
-def get_checklist_template():
-    doc_ref = db.collection("app_configs").document("checklist_template").get()
-    if doc_ref.exists:
-        return doc_ref.to_dict().get("items", [])
+def get_checklist_template(gestor_uid=None):
+    if gestor_uid:
+        doc_ref = db.collection("checklist_templates").document(gestor_uid).get()
+        if doc_ref.exists:
+            return doc_ref.to_dict().get("items", [])
+    
+    doc_ref_global = db.collection("app_configs").document("checklist_template").get()
+    if doc_ref_global.exists:
+        return doc_ref_global.to_dict().get("items", [])
+    
     default_items = ["Pneus", "Luzes", "Freios", "Nível de Óleo", "Documentação"]
     db.collection("app_configs").document("checklist_template").set({"items": default_items})
     return default_items
 
-def update_checklist_template(items_list):
-    db.collection("app_configs").document("checklist_template").set({"items": items_list})
+def update_checklist_template(items_list, gestor_uid=None):
+    if gestor_uid:
+        db.collection("checklist_templates").document(gestor_uid).set({
+            "items": items_list, "gestor_uid": gestor_uid, "last_updated": datetime.now()
+        })
+    else:
+        db.collection("app_configs").document("checklist_template").set({"items": items_list})
 
 def create_maintenance_order(order_data):
     db.collection("maintenance_orders").add(order_data)
