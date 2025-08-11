@@ -228,14 +228,17 @@ with tab6:
                     with st.expander(f"Plano para {plate}"):
                         threshold_val = float(schedule.get('threshold_km', 10000))
                         last_km_val = float(schedule.get('last_maintenance_km', 0))
+                        alert_range_val = float(schedule.get('alert_range_km', 500))
+                        
                         with st.form(key=f"maint_form_{plate}_{i}"):
-                            threshold = st.number_input("Alertar a cada (km)", min_value=1000.0, value=threshold_val, step=500.0)
+                            threshold = st.number_input("Realizar manutenção a cada (km)", min_value=1000.0, value=threshold_val, step=500.0)
                             last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0.0, value=last_km_val)
+                            alert_range = st.number_input("Gerar alerta X km antes do vencimento", min_value=100.0, value=alert_range_val, step=100.0)
                             notes = st.text_area("Descrição do Plano (ex: Troca de óleo e filtros)", value=schedule.get('notes', ''))
                             if st.form_submit_button("Salvar Plano"):
                                 plan_data = {
                                     "gestor_uid": gestor_uid, "threshold_km": threshold,
-                                    "last_maintenance_km": last_km, "notes": notes
+                                    "last_maintenance_km": last_km, "alert_range_km": alert_range, "notes": notes
                                 }
                                 firestore_service.update_maintenance_schedule(plate, plan_data)
                                 st.success(f"Plano de manutenção para {plate} salvo."); st.rerun()
