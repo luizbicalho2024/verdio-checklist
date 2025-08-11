@@ -14,19 +14,16 @@ from services import firestore_service, auth_service, etrac_service, notificatio
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
-# --- BLOCO DE VERIFICAÇÃO E REDIRECIONAMENTO ---
+# --- LÓGICA DE IMPERSONIFICAÇÃO E LOGIN ---
 is_impersonating = False
-# Verifica se é um admin impersonando um gestor
 if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
     is_impersonating = True
     display_user_data = st.session_state.get('impersonated_user_data', {})
     display_uid = st.session_state.get('impersonated_uid')
     real_user_data = st.session_state.get('user_data', {})
 else:
-    # Se não estiver impersonando, verifica o login normal
     if not st.session_state.get('logged_in'):
-        st.switch_page("app.py")  # Redireciona para o login se não estiver logado
-    
+        st.switch_page("app.py")
     display_user_data = st.session_state.get('user_data', {})
     display_uid = st.session_state.get('user_uid')
     real_user_data = display_user_data
@@ -150,9 +147,11 @@ with tab_aprov:
             checklist_time = checklist['timestamp'].strftime('%d/%m/%Y às %H:%M')
             with st.expander(f"**Veículo:** {checklist['vehicle_plate']} | **Motorista:** {checklist['driver_email']} | **Data:** {checklist_time}"):
                 st.write("**Itens com inconformidades:**")
-                inconformidades = {item: status for item, status in checklist['items'].items() if status == "Não OK"}
-                for item, status in inconformidades.items():
-                    st.warning(f"- {item.replace('_', ' ').capitalize()}: **{status}**")
+                for item_name, item_data in checklist.get('items', {}).items():
+                    if isinstance(item_data, dict) and item_data.get('status') == "Não OK":
+                        st.warning(f"- {item_name.replace('_', ' ').capitalize()}: **{item_data['status']}**")
+                        if item_data.get('photo_url'):
+                            st.image(item_data['photo_url'], caption=f"Foto para {item_name}", width=300)
                 
                 st.write("**Observações do Motorista:**")
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
@@ -220,7 +219,9 @@ with tab_bi:
             if checklist.get('status') and 'Aprovado' not in checklist.get('status'):
                 failed_vehicles.append(checklist.get('vehicle_plate'))
                 for item, status in checklist.get('items', {}).items():
-                    if status == 'Não OK':
+                    if isinstance(status, dict) and status.get('status') == 'Não OK':
+                        failed_items.append(item.replace('_', ' ').capitalize())
+                    elif isinstance(status, str) and status == 'Não OK': # Legado
                         failed_items.append(item.replace('_', ' ').capitalize())
         col1, col2 = st.columns(2)
         with col1:
