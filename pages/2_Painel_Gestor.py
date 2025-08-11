@@ -14,10 +14,8 @@ from services import firestore_service, auth_service, etrac_service, notificatio
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
-# --- CSS PARA OCULTAR A SIDEBAR ---
 st.markdown("""<style> [data-testid="stSidebar"] { display: none; } </style>""", unsafe_allow_html=True)
 
-# --- LÓGICA DE IMPERSONIFICAÇÃO E LOGIN ---
 is_impersonating = False
 if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
     is_impersonating = True
@@ -34,16 +32,14 @@ else:
         st.error("Acesso negado.")
         st.stop()
 
-# --- CABEÇALHO COM TÍTULO E BOTÃO SAIR ---
-col1, col2 = st.columns([4, 1])
-with col1:
+col_header_1, col_header_2 = st.columns([4, 1])
+with col_header_1:
     st.title(f"📊 Painel do Gestor")
-with col2:
+with col_header_2:
     st.write("")
     if st.button("Sair 🚪", use_container_width=True):
         auth_service.logout()
 st.caption(f"Gestor: {display_user_data.get('email')}")
-
 
 if is_impersonating:
     def exit_impersonation_mode():
@@ -54,27 +50,21 @@ if is_impersonating:
     if st.button("⬅️ Voltar ao Painel de Admin"):
         exit_impersonation_mode()
 
-# --- FUNÇÃO DE VERIFICAÇÃO DE MANUTENÇÃO ---
 def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
     schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
-    if not schedules:
-        return
+    if not schedules: return
     vehicles = etrac_service.get_vehicles_from_etrac(gestor_email, api_key)
-    if not vehicles:
-        return
+    if not vehicles: return
 
     overdue_vehicles = []
     for vehicle in vehicles:
         plate = vehicle.get('placa')
-        if not plate or plate not in schedules:
-            continue
-        
+        if not plate or plate not in schedules: continue
         try:
             current_odom_str = vehicle.get('odometro', '0').replace('km', '').replace('.', '').replace(',', '.').strip()
             current_odom = float(current_odom_str)
-        except (ValueError, TypeError):
-            continue
-
+        except (ValueError, TypeError): continue
+        
         schedule = schedules[plate]
         last_km = float(schedule.get('last_maintenance_km', 0))
         threshold = float(schedule.get('threshold_km', 0))
@@ -109,9 +99,9 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
         notification_service.send_email_notification(gestor_email, subject, email_body)
         firestore_service.log_action(gestor_email, "ALERTA_MANUTENCAO", f"{len(overdue_vehicles)} veículos com manutenção próxima.")
 
-# --- RENDERIZAÇÃO DAS ABAS ---
-tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas = st.tabs([
-    "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", "🛠️ Manutenção", "👤 Gerenciar Motoristas"
+tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas, tab_checklist = st.tabs([
+    "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", 
+    "🛠️ Manutenção", "👤 Gerenciar Motoristas", "📝 Gerenciar Checklist"
 ])
 
 with tab_mapa:
