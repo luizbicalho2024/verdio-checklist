@@ -58,11 +58,23 @@ def create_firestore_user(uid, email, role, password_hash, gestor_uid=None, etra
 def update_user_data(uid, data_to_update):
     db.collection("users").document(uid).update(data_to_update)
 
+def update_user_totp_info(uid, secret, enabled):
+    db.collection("users").document(uid).update({'totp_secret': secret, 'totp_enabled': enabled})
+
 def log_action(user_email, action, details):
     log_data = {"timestamp": datetime.now(), "user": user_email, "action": action, "details": details}
     db.collection("logs").add(log_data)
 
+# --- FUNÇÃO RESTAURADA ABAIXO ---
+def get_logs_paginated(limit=20, start_after_doc=None):
+    """Busca os logs de forma paginada para a tela do Admin."""
+    query = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
+    if start_after_doc:
+        query = query.start_after(start_after_doc)
+    return query.get()
+
 def save_checklist(data):
+    """Salva um novo checklist e retorna o ID do documento criado."""
     try:
         _, doc_ref = db.collection("checklists").add(data)
         return doc_ref.id
@@ -71,6 +83,7 @@ def save_checklist(data):
         return None
 
 def update_checklist_with_photos(doc_id, photo_updates):
+    """Atualiza um checklist existente com as URLs das fotos."""
     db.collection("checklists").document(doc_id).update(photo_updates)
 
 def get_checklists_for_gestor(gestor_uid):
@@ -139,7 +152,6 @@ def get_geofence_settings():
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def update_maintenance_schedule(plate, data):
-    # Reseta o status da notificação sempre que um plano é salvo/atualizado.
     data['notification_sent_for_km'] = data.get('last_maintenance_km', 0)
     db.collection("maintenance_schedules").document(plate).set(data, merge=True)
 
