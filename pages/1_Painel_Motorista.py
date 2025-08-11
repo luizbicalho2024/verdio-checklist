@@ -11,7 +11,6 @@ from utils import geo_util
 
 st.set_page_config(page_title="Painel Motorista", layout="wide")
 
-# CSS PARA OCULTAR A SIDEBAR
 st.markdown("""<style> [data-testid="stSidebar"] { display: none; } </style>""", unsafe_allow_html=True)
 
 if not st.session_state.get('logged_in'):
@@ -22,11 +21,10 @@ if user_data.get('role') != 'motorista':
     st.error("Acesso negado.")
     st.stop()
 
-# CABEÇALHO COM TÍTULO E BOTÃO SAIR
-col1, col2 = st.columns([4, 1])
-with col1:
+col_header_1, col_header_2 = st.columns([4, 1])
+with col_header_1:
     st.title(f"📋 Checklist Pré-Jornada")
-with col2:
+with col_header_2:
     st.write("")
     if st.button("Sair 🚪", use_container_width=True):
         auth_service.logout()
@@ -50,7 +48,8 @@ if not vehicles:
     st.warning("Nenhum veículo foi retornado pela API da eTrac.")
     st.stop()
 
-checklist_items_template = firestore_service.get_checklist_template()
+# Busca o checklist específico do gestor. Se não houver, a função retornará o global.
+checklist_items_template = firestore_service.get_checklist_template(gestor_uid=gestor_uid)
 if not checklist_items_template:
     st.error("Modelo de checklist não encontrado. Contate o administrador.")
     st.stop()
@@ -104,7 +103,6 @@ if selected_vehicle_str:
                 if item not in st.session_state.current_checklist["photos"]:
                     validation_passed = False
                     failed_items_without_photo.append(item)
-        
         if not is_ok and not st.session_state.current_checklist["notes"]:
             st.error("Preencha as observações se algum item estiver 'Não OK'.")
         elif not validation_passed:
@@ -176,7 +174,6 @@ if selected_vehicle_str:
                                  <p><b>Observações:</b> {notes}</p>
                                  <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
                         notification_service.send_email_notification(gestor_data['email'], subject, body)
-
                 firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
                 st.success("Checklist enviado com sucesso!")
                 del st.session_state.current_checklist
