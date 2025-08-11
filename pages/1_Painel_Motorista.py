@@ -3,7 +3,6 @@ import sys
 import os
 import streamlit as st
 from datetime import datetime
-from streamlit_shadcn_ui import radio_group
 
 sys.path.append(os.getcwd())
 
@@ -68,22 +67,23 @@ if selected_vehicle_str:
     st.subheader(f"Itens de Verificação para {selected_vehicle_data['placa']}")
 
     for item in checklist_items_template:
-        col1, col2 = st.columns([3, 2])
+        col1, col2, col3 = st.columns([4, 1, 1])
         with col1:
-            st.write(item.replace('_', ' ').capitalize())
+            st.write(f"**{item.replace('_', ' ').capitalize()}**")
+
+        current_status = st.session_state.current_checklist["status"].get(item, "OK")
+
         with col2:
-            current_status = st.session_state.current_checklist["status"].get(item, "OK")
-            new_status = radio_group(
-                options=["OK", "Não OK"],
-                default_value=current_status,
-                key=f"radiogroup_{item}_{selected_vehicle_data['placa']}"
-            )
+            if st.button("OK", key=f"ok_{item}_{selected_vehicle_data['placa']}", type="primary" if current_status == "OK" else "secondary", use_container_width=True):
+                st.session_state.current_checklist["status"][item] = "OK"
+                if item in st.session_state.current_checklist["photos"]:
+                    del st.session_state.current_checklist["photos"][item]
+                st.rerun()
         
-        if new_status != current_status:
-            st.session_state.current_checklist["status"][item] = new_status
-            if new_status == "OK" and item in st.session_state.current_checklist["photos"]:
-                del st.session_state.current_checklist["photos"][item]
-            st.rerun()
+        with col3:
+            if st.button("Não OK", key=f"naook_{item}_{selected_vehicle_data['placa']}", type="primary" if current_status == "Não OK" else "secondary", use_container_width=True):
+                st.session_state.current_checklist["status"][item] = "Não OK"
+                st.rerun()
 
         if st.session_state.current_checklist["status"].get(item) == "Não OK":
             photo = st.camera_input(f"📸 Foto obrigatória para: {item}", key=f"photo_{item}_{selected_vehicle_data['placa']}")
@@ -91,7 +91,7 @@ if selected_vehicle_str:
                 st.session_state.current_checklist["photos"][item] = photo
         st.divider()
 
-    notes = st.text_area("Observações (obrigatório se algum item for 'Não OK')", key=f"notes_{selected_vehicle_data['placa']}")
+    notes = st.text_area("Observações (obrigatório se algum item for 'Não OK')", value=st.session_state.current_checklist.get("notes", ""), key=f"notes_{selected_vehicle_data['placa']}")
     st.session_state.current_checklist["notes"] = notes
 
     if st.button("Enviar Checklist", type="primary", use_container_width=True):
@@ -167,7 +167,8 @@ if selected_vehicle_str:
                         st.error(f"ERRO: Não foi possível desbloquear o veículo {plate}. Nenhum número de chip está vinculado. Avise o administrador.")
                         checklist_data['status'] = "Pendente"
                         checklist_data['notes'] += "\n\n[SISTEMA] Falha no desbloqueio automático: Chip não cadastrado."
-                        firestore_service.update_checklist_with_photos(checklist_id, {"status": "Pendente", "notes": checklist_data['notes']})
+                        if checklist_id:
+                            firestore_service.update_checklist_with_photos(checklist_id, {"status": "Pendente", "notes": checklist_data['notes']})
                 else:
                     st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
                     if gestor_data and gestor_data.get('email'):
