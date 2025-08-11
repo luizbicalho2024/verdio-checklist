@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, auth_service, etrac_service, notification_service
+from services import firestore_service, auth_service, etrac_service, notification_service, twilio_service
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
@@ -156,15 +156,29 @@ with tab_aprov:
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("✅ Aprovar Saída Mesmo Assim", key=f"approve_{checklist['doc_id']}", type="primary"):
+                    if st.button("✅ Aprovar Saída e Enviar Desbloqueio", key=f"approve_{checklist['doc_id']}", type="primary"):
+                        plate = checklist.get('vehicle_plate')
+                        tracker_id = checklist.get('tracker_id')
+                        
+                        vehicle_details = firestore_service.get_vehicle_details_by_plate(plate)
+                        if vehicle_details and vehicle_details.get('tracker_sim_number'):
+                            sim_number = vehicle_details.get('tracker_sim_number')
+                            twilio_service.send_unlock_sms(
+                                to_number=sim_number,
+                                equipamento_serial=tracker_id,
+                                admin_email_logger=real_user_data['email']
+                            )
+                        else:
+                            st.error(f"Veículo aprovado, mas o comando SMS não pôde ser enviado: Chip não cadastrado para a placa {plate}.")
+                        
                         firestore_service.update_checklist_status(checklist['doc_id'], "Aprovado pelo Gestor", display_user_data['email'])
-                        firestore_service.log_action(st.session_state.user_data['email'], "APROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} aprovado.")
+                        firestore_service.log_action(real_user_data['email'], "APROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} aprovado.")
                         st.rerun()
                 with col2:
                     if st.button("❌ Reprovar e Criar OS", key=f"reject_{checklist['doc_id']}"):
                         firestore_service.update_checklist_status(checklist['doc_id'], "Reprovado pelo Gestor", display_user_data['email'])
                         firestore_service.create_maintenance_order(checklist)
-                        firestore_service.log_action(st.session_state.user_data['email'], "REPROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} reprovado.")
+                        firestore_service.log_action(real_user_data['email'], "REPROVACAO_CHECKLIST", f"Checklist para {checklist['vehicle_plate']} reprovado.")
                         st.error("Checklist reprovado e Ordem de Serviço criada.")
                         st.rerun()
 
@@ -208,7 +222,7 @@ with tab_hist:
     st.subheader("Histórico Detalhado de Viagens por Veículo")
     vehicles_from_api_hist = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
     if vehicles_from_api_hist:
-        plate_options = sorted([v['placa'] for v in vehicles_from_api_hist])
+        plate_options = sorted(list(set(v['placa'] for v in vehicles_from_api_hist)))
         col1, col2, col3 = st.columns([2,1,1])
         with col1:
             selected_plate = st.selectbox("Selecione um veículo", options=plate_options, key="hist_plate_select")
