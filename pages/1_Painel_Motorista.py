@@ -3,13 +3,11 @@ import sys
 import os
 import streamlit as st
 from datetime import datetime
-
-# NOVA IMPORTAÇÃO
-from streamlit_shadcn_ui import buttons
+from streamlit_shadcn_ui import radio_group
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service
+from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service, storage_service
 from utils import geo_util
 
 st.set_page_config(page_title="Painel Motorista", layout="wide")
@@ -30,31 +28,33 @@ with st.sidebar:
 
 st.title(f"📋 Checklist Pré-Jornada")
 
-# --- LÓGICA PARA BUSCAR VEÍCULOS E TEMPLATE (sem alterações) ---
 gestor_uid = user_data.get('gestor_uid')
 if not gestor_uid:
     st.error("Este usuário motorista não está associado a nenhum gestor. Por favor, contate um administrador.")
     st.stop()
+
 gestor_data = firestore_service.get_user(gestor_uid)
 gestor_email_acesso = gestor_data.get('email') if gestor_data else None
 gestor_etrac_api_key = gestor_data.get('etrac_api_key') if gestor_data else None
+
 if not gestor_email_acesso or not gestor_etrac_api_key:
     st.error("Seu gestor não foi encontrado ou não possui credenciais da eTrac configuradas.")
     st.stop()
+
 vehicles = etrac_service.get_vehicles_from_etrac(gestor_email_acesso, gestor_etrac_api_key)
 if not vehicles:
     st.warning("Nenhum veículo foi retornado pela API da eTrac.")
     st.stop()
+
 checklist_items_template = firestore_service.get_checklist_template()
 if not checklist_items_template:
     st.error("Modelo de checklist não encontrado. Contate o administrador.")
     st.stop()
-# --- FIM DA LÓGICA DE BUSCA ---
 
 vehicle_options = {f"{v['placa']} - {v.get('modelo', '')}": v for v in vehicles}
 selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_options.keys())
 
-# --- LÓGICA DE GERENCIAMENTO DE ESTADO (sem alterações) ---
+# Reseta o estado do checklist se o veículo for trocado
 if 'current_checklist' not in st.session_state or st.session_state.current_checklist['plate'] != selected_vehicle_str:
     st.session_state.current_checklist = {
         "plate": selected_vehicle_str,
@@ -67,32 +67,21 @@ if selected_vehicle_str:
     selected_vehicle_data = vehicle_options[selected_vehicle_str]
     st.subheader(f"Itens de Verificação para {selected_vehicle_data['placa']}")
 
-    # --- LOOP DE CHECKLIST COM OS NOVOS BOTÕES ---
     for item in checklist_items_template:
-        col1, col2 = st.columns([3, 2]) # Colunas para alinhar o texto e os botões
+        col1, col2 = st.columns([3, 2])
         with col1:
             st.write(item.replace('_', ' ').capitalize())
-
         with col2:
             current_status = st.session_state.current_checklist["status"].get(item, "OK")
-            # Determina qual botão deve vir pré-selecionado
-            default_index = 0 if current_status == "OK" else 1
-            
-            # Cria o grupo de botões
-            clicked_button = buttons(
-                options=[
-                    {'label': 'OK', 'icon': 'check'}, 
-                    {'label': 'Não OK', 'icon': 'x'}
-                ], 
-                default_index=default_index,
-                key=f"buttons_{item}_{selected_vehicle_data['placa']}"
+            new_status = radio_group(
+                options=["OK", "Não OK"],
+                default_value=current_status,
+                key=f"radiogroup_{item}_{selected_vehicle_data['placa']}"
             )
-            # A função retorna o 'label' do botão clicado
-            new_status = clicked_button
         
         if new_status != current_status:
             st.session_state.current_checklist["status"][item] = new_status
-            if new_status == "Não OK" and item in st.session_state.current_checklist["photos"]:
+            if new_status == "OK" and item in st.session_state.current_checklist["photos"]:
                 del st.session_state.current_checklist["photos"][item]
             st.rerun()
 
@@ -100,14 +89,12 @@ if selected_vehicle_str:
             photo = st.camera_input(f"📸 Foto obrigatória para: {item}", key=f"photo_{item}_{selected_vehicle_data['placa']}")
             if photo:
                 st.session_state.current_checklist["photos"][item] = photo
-        
         st.divider()
 
     notes = st.text_area("Observações (obrigatório se algum item for 'Não OK')", key=f"notes_{selected_vehicle_data['placa']}")
     st.session_state.current_checklist["notes"] = notes
 
     if st.button("Enviar Checklist", type="primary", use_container_width=True):
-        # A lógica de envio permanece a mesma
         validation_passed = True
         failed_items_without_photo = []
         is_ok = True
@@ -123,9 +110,77 @@ if selected_vehicle_str:
         elif not validation_passed:
             st.error(f"Erro: É obrigatório tirar uma foto para os seguintes itens: {', '.join(failed_items_without_photo)}")
         else:
-            # Lógica de salvar, notificar e enviar SMS... (sem alterações)
             with st.spinner("Salvando checklist e enviando fotos..."):
-                # ... (código de salvamento e envio que já estava aqui)
+                geofence = firestore_service.get_geofence_settings()
+                location_status = "Não verificado"
+                if geofence:
+                    vehicle_pos = etrac_service.get_single_vehicle_position(gestor_email_acesso, gestor_etrac_api_key, selected_vehicle_data['placa'])
+                    if vehicle_pos and 'latitude' in vehicle_pos and 'longitude' in vehicle_pos:
+                        try:
+                            lat, lon = float(vehicle_pos['latitude']), float(vehicle_pos['longitude'])
+                            distance = geo_util.haversine_distance(geofence['latitude'], geofence['longitude'], lat, lon)
+                            if distance <= geofence['radius_meters']:
+                                location_status = "Dentro da Base"
+                            else:
+                                location_status = f"Fora da Base ({int(distance)}m)"
+                        except (ValueError, TypeError):
+                            location_status = "Coordenada Inválida"
+                    else:
+                        location_status = "Posição não encontrada"
+                
+                items_data_to_save = {item: {"status": status} for item, status in st.session_state.current_checklist['status'].items()}
+                checklist_data = {
+                    "vehicle_plate": selected_vehicle_data['placa'],
+                    "tracker_id": selected_vehicle_data.get('idRastreador') or selected_vehicle_data.get('equipamento_serial'),
+                    "driver_uid": st.session_state.user_uid,
+                    "driver_email": user_data['email'],
+                    "gestor_uid": user_data['gestor_uid'],
+                    "timestamp": datetime.now(),
+                    "items": items_data_to_save,
+                    "notes": st.session_state.current_checklist['notes'],
+                    "status": "Aprovado" if is_ok else "Pendente",
+                    "location_status": location_status
+                }
+                
+                checklist_id = firestore_service.save_checklist(checklist_data)
+                
+                if checklist_id and st.session_state.current_checklist['photos']:
+                    photo_updates = {}
+                    for item_name, photo_file in st.session_state.current_checklist['photos'].items():
+                        file_path = f"checklists/{checklist_id}/{item_name.replace(' ', '_')}.jpg"
+                        photo_url = storage_service.upload_file(photo_file, file_path)
+                        if photo_url:
+                            photo_updates[f"items.{item_name}.photo_url"] = photo_url
+                    if photo_updates:
+                        firestore_service.update_checklist_with_photos(checklist_id, photo_updates)
+                
+                if is_ok:
+                    st.balloons()
+                    plate = selected_vehicle_data['placa']
+                    serial = selected_vehicle_data.get('idRastreador') or selected_vehicle_data.get('equipamento_serial')
+                    vehicle_details = firestore_service.get_vehicle_details_by_plate(plate)
+                    if vehicle_details and vehicle_details.get('tracker_sim_number'):
+                        sim_number = vehicle_details['tracker_sim_number']
+                        st.info(f"Todos os itens OK. Enviando comando de desbloqueio para o veículo {plate}...")
+                        twilio_service.send_unlock_sms(to_number=sim_number, equipamento_serial=serial, admin_email_logger=user_data['email'])
+                    else:
+                        st.error(f"ERRO: Não foi possível desbloquear o veículo {plate}. Nenhum número de chip está vinculado. Avise o administrador.")
+                        checklist_data['status'] = "Pendente"
+                        checklist_data['notes'] += "\n\n[SISTEMA] Falha no desbloqueio automático: Chip não cadastrado."
+                        firestore_service.update_checklist_with_photos(checklist_id, {"status": "Pendente", "notes": checklist_data['notes']})
+                else:
+                    st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
+                    if gestor_data and gestor_data.get('email'):
+                        subject = f"Alerta: Checklist Pendente para o Veículo {selected_vehicle_data['placa']}"
+                        body = f"""<h3>Checklist com Inconformidades</h3>
+                                 <p>O motorista <b>{user_data['email']}</b> submeteu um checklist para o veículo <b>{selected_vehicle_data['placa']}</b> que requer sua atenção.</p>
+                                 <p><b>Localização:</b> {location_status}</p>
+                                 <p><b>Observações:</b> {notes}</p>
+                                 <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
+                        notification_service.send_email_notification(gestor_data['email'], subject, body)
+
+                firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
                 st.success("Checklist enviado com sucesso!")
+
                 del st.session_state.current_checklist
                 st.rerun()
