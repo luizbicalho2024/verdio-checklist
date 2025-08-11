@@ -10,6 +10,8 @@ from services import firestore_service, auth_service, etrac_service
 
 st.set_page_config(page_title="Painel Admin", layout="wide")
 
+st.markdown("""<style> [data-testid="stSidebar"] { display: none; } </style>""", unsafe_allow_html=True)
+
 if not st.session_state.get('logged_in'):
     st.switch_page("app.py")
 
@@ -17,13 +19,14 @@ user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'admin':
     st.error("Acesso negado."); st.stop()
 
-with st.sidebar:
-    st.write(f"Logado como:")
-    st.markdown(f"**{user_data.get('email')}**")
-    if st.button("Sair", use_container_width=True):
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.title("👑 Painel de Administração")
+with col2:
+    st.write("")
+    if st.button("Sair 🚪", use_container_width=True):
         auth_service.logout()
-
-st.title("👑 Painel de Administração")
+st.caption(f"Admin: {user_data.get('email')}")
 
 def clear_editing_state():
     if 'editing_user_uid' in st.session_state:
@@ -40,17 +43,14 @@ with tab1:
     if 'editing_user_uid' in st.session_state and st.session_state.editing_user_uid:
         uid_to_edit = st.session_state.editing_user_uid
         user_to_edit = firestore_service.get_user(uid_to_edit)
-        
         st.markdown(f"### Editando: `{user_to_edit['email']}`")
         with st.form("edit_user_form"):
             new_email = st.text_input("Email", value=user_to_edit['email'])
             new_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
             new_role = st.selectbox("Papel", options=['motorista', 'gestor'], index=['motorista', 'gestor'].index(user_to_edit['role']))
-            
             new_etrac_api_key = user_to_edit.get('etrac_api_key', '')
             if new_role == 'gestor':
                 new_etrac_api_key = st.text_input("Chave da API eTrac", value=new_etrac_api_key)
-
             new_gestor_uid = None
             if new_role == 'motorista':
                 all_managers = firestore_service.get_all_managers()
@@ -65,7 +65,6 @@ with tab1:
                     new_gestor_uid = managers_dict[selected_manager_email]
                 else:
                     st.warning("Nenhum gestor cadastrado para associar este motorista.")
-
             submitted = st.form_submit_button("Salvar Alterações")
             if submitted:
                 firestore_updates = {'email': new_email, 'role': new_role}
@@ -75,11 +74,9 @@ with tab1:
                 if new_role == 'motorista':
                     firestore_updates['gestor_uid'] = new_gestor_uid
                     if 'etrac_api_key' in user_to_edit: firestore_updates['etrac_api_key'] = None
-                
                 firestore_service.update_user_data(uid_to_edit, firestore_updates)
                 auth_service.update_auth_user(uid_to_edit, email=new_email, password=new_password if new_password else None)
                 auth_service.update_user_role_and_claims(uid_to_edit, new_role, new_gestor_uid if new_role == 'motorista' else None)
-                
                 st.success(f"Usuário {new_email} atualizado com sucesso!")
                 firestore_service.log_action(user_data['email'], "EDITAR_USUARIO", f"Dados de {new_email} foram alterados.")
                 clear_editing_state()
@@ -229,7 +226,6 @@ with tab6:
                         threshold_val = float(schedule.get('threshold_km', 10000))
                         last_km_val = float(schedule.get('last_maintenance_km', 0))
                         alert_range_val = float(schedule.get('alert_range_km', 500))
-                        
                         with st.form(key=f"maint_form_{plate}_{i}"):
                             threshold = st.number_input("Realizar manutenção a cada (km)", min_value=1000.0, value=threshold_val, step=500.0)
                             last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0.0, value=last_km_val)
