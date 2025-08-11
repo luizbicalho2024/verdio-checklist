@@ -171,7 +171,6 @@ with tab_aprov:
 with tab_hist:
     st.subheader("Relatório de Checklists")
     all_checklists = firestore_service.get_checklists_for_gestor(display_uid)
-    
     if not all_checklists:
         st.info("Nenhum checklist encontrado no histórico.")
     else:
@@ -183,35 +182,29 @@ with tab_hist:
         st.dataframe(df, use_container_width=True, hide_index=True)
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Baixar Resumo como CSV", csv, f'resumo_checklists_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
-        
         st.divider()
-        
         st.subheader("Detalhes dos Checklists Individuais")
         for checklist in all_checklists:
             checklist_time = checklist['timestamp'].strftime('%d/%m/%Y às %H:%M')
             with st.expander(f"**Veículo:** {checklist.get('vehicle_plate', 'N/A')} | **Motorista:** {checklist.get('driver_email', 'N/A')} | **Data:** {checklist_time} | **Status:** {checklist.get('status', 'N/A')}"):
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown("**Informações Gerais**")
                     st.text(f"Status do Geofence: {checklist.get('location_status', 'N/A')}")
                     st.text("Observações do Motorista:")
                     st.text_area("Observações", value=checklist.get('notes', 'Nenhuma.'), height=150, disabled=True, key=f"notes_hist_{checklist['timestamp']}_{checklist.get('vehicle_plate')}")
-
                 with col2:
                     st.markdown("**Itens Verificados**")
                     items = checklist.get('items', {})
                     for item_name, item_data in items.items():
                         status = item_data.get('status', 'N/A')
                         if status == "OK":
-                            st.success(f"✔️ {item_name}: {status}", icon=" ")
+                            st.success(f"✔️ {item_name}: {status}")
                         else:
-                            st.error(f"❌ {item_name}: {status}", icon=" ")
-                        
+                            st.error(f"❌ {item_name}: {status}")
                         if item_data.get('photo_url'):
                             st.image(item_data['photo_url'], caption=f"Foto para {item_name}", width=200)
     st.divider()
-
     st.subheader("Histórico Detalhado de Viagens por Veículo")
     vehicles_from_api_hist = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
     if vehicles_from_api_hist:
@@ -228,7 +221,6 @@ with tab_hist:
                     trips = etrac_service.get_trip_summary(display_user_data.get('email'), display_user_data.get('etrac_api_key'), selected_plate, selected_date)
                     st.session_state.trip_summary = trips
                     st.session_state.last_searched_plate = selected_plate
-        
         if 'trip_summary' in st.session_state and st.session_state.get('last_searched_plate') == selected_plate:
             trips = st.session_state.trip_summary
             if trips:
@@ -276,7 +268,6 @@ with tab_maint:
         with st.spinner("Verificando alertas de manutenção..."):
             check_for_maintenance_alerts(gestor_uid=display_uid, gestor_email=display_user_data.get('email'), api_key=display_user_data.get('etrac_api_key'))
         st.session_state.maint_check_done = True
-    
     st.subheader("Ordens de Serviço Corretivas e Preventivas")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
