@@ -156,3 +156,18 @@ def delete_maintenance_schedule(plate):
     except Exception as e:
         print(f"Erro ao excluir plano: {e}")
         return False
+
+def save_checklist(data):
+    """Salva um novo checklist e retorna o ID do documento criado."""
+    try:
+        update_time, doc_ref = db.collection("checklists").add(data)
+        return doc_ref.id
+    except Exception as e:
+        print(f"Erro ao salvar checklist: {e}")
+        return None
+
+def update_checklist_with_photos(doc_id, photo_updates):
+    """Atualiza um checklist existente com as URLs das fotos."""
+    # O formato do update será, por exemplo: {"items.Pneus.photo_url": "http://..."}
+    # Isso usa a notação de ponto para atualizar campos aninhados.
+    db.collection("checklists").document(doc_id).update(photo_updates)
