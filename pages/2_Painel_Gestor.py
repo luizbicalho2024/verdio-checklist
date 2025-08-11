@@ -99,7 +99,6 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
         notification_service.send_email_notification(gestor_email, subject, email_body)
         firestore_service.log_action(gestor_email, "ALERTA_MANUTENCAO", f"{len(overdue_vehicles)} veículos com manutenção próxima.")
 
-# Adicionada a nova aba na lista
 tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas, tab_checklist = st.tabs([
     "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", 
     "🛠️ Manutenção", "👤 Gerenciar Motoristas", "📝 Gerenciar Checklist"
@@ -109,13 +108,10 @@ with tab_mapa:
     st.subheader("Localização da Frota em Tempo Real")
     if st.button("Atualizar Posições"):
         st.cache_data.clear()
-
     @st.cache_data(ttl=120)
     def get_vehicles_cached(email, api_key):
         return etrac_service.get_vehicles_from_etrac(email, api_key)
-
     vehicles_list = get_vehicles_cached(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
-    
     if not vehicles_list:
         st.warning("Nenhum veículo encontrado para exibir no mapa.")
     else:
@@ -133,7 +129,6 @@ with tab_mapa:
                 "Ignição": ignicao_status, "Bateria": bateria_status, "Velocidade": v.get('velocidade'),
                 "Última Transmissão": v.get('data_transmissao')
             })
-        
         if map_data:
             df_map = pd.DataFrame(map_data)
             st.map(df_map)
@@ -157,7 +152,6 @@ with tab_aprov:
                         st.warning(f"- {item_name.replace('_', ' ').capitalize()}: **{item_data['status']}**")
                         if item_data.get('photo_url'):
                             st.image(item_data['photo_url'], caption=f"Foto para {item_name}", width=300)
-                
                 st.write("**Observações do Motorista:**")
                 st.text_area("Notas", value=checklist['notes'], height=100, disabled=True, key=f"notes_{checklist['doc_id']}")
                 col1, col2 = st.columns(2)
@@ -175,20 +169,49 @@ with tab_aprov:
                         st.rerun()
 
 with tab_hist:
-    st.subheader("Histórico de Checklists e Viagens")
+    st.subheader("Relatório de Checklists")
     all_checklists = firestore_service.get_checklists_for_gestor(display_uid)
+    
     if not all_checklists:
         st.info("Nenhum checklist encontrado no histórico.")
     else:
-        display_data = [{'Data': item['timestamp'].strftime('%d/%m/%Y %H:%M'), 'Veículo': item.get('vehicle_plate', 'N/A'),
+        st.markdown("#### Resumo dos Checklists")
+        summary_data = [{'Data': item['timestamp'].strftime('%d/%m/%Y %H:%M'), 'Veículo': item.get('vehicle_plate', 'N/A'),
                          'Motorista': item.get('driver_email', 'N/A'), 'Status': item.get('status', 'N/A'),
-                         'Localização': item.get('location_status', 'N/A'),
-                         'Observações': item.get('notes', '')} for item in all_checklists]
-        df = pd.DataFrame(display_data)
+                         'Localização': item.get('location_status', 'N/A')} for item in all_checklists]
+        df = pd.DataFrame(summary_data)
         st.dataframe(df, use_container_width=True, hide_index=True)
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Baixar Histórico como CSV", csv, f'historico_checklists_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
+        st.download_button("📥 Baixar Resumo como CSV", csv, f'resumo_checklists_{datetime.now().strftime("%Y%m%d")}.csv', 'text/csv')
+        
+        st.divider()
+        
+        st.subheader("Detalhes dos Checklists Individuais")
+        for checklist in all_checklists:
+            checklist_time = checklist['timestamp'].strftime('%d/%m/%Y às %H:%M')
+            with st.expander(f"**Veículo:** {checklist.get('vehicle_plate', 'N/A')} | **Motorista:** {checklist.get('driver_email', 'N/A')} | **Data:** {checklist_time} | **Status:** {checklist.get('status', 'N/A')}"):
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Informações Gerais**")
+                    st.text(f"Status do Geofence: {checklist.get('location_status', 'N/A')}")
+                    st.text("Observações do Motorista:")
+                    st.text_area("Observações", value=checklist.get('notes', 'Nenhuma.'), height=150, disabled=True, key=f"notes_hist_{checklist['timestamp']}_{checklist.get('vehicle_plate')}")
+
+                with col2:
+                    st.markdown("**Itens Verificados**")
+                    items = checklist.get('items', {})
+                    for item_name, item_data in items.items():
+                        status = item_data.get('status', 'N/A')
+                        if status == "OK":
+                            st.success(f"✔️ {item_name}: {status}", icon=" ")
+                        else:
+                            st.error(f"❌ {item_name}: {status}", icon=" ")
+                        
+                        if item_data.get('photo_url'):
+                            st.image(item_data['photo_url'], caption=f"Foto para {item_name}", width=200)
     st.divider()
+
     st.subheader("Histórico Detalhado de Viagens por Veículo")
     vehicles_from_api_hist = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
     if vehicles_from_api_hist:
@@ -251,12 +274,9 @@ with tab_maint:
     st.subheader("Manutenção")
     if 'maint_check_done' not in st.session_state:
         with st.spinner("Verificando alertas de manutenção..."):
-            check_for_maintenance_alerts(
-                gestor_uid=display_uid,
-                gestor_email=display_user_data.get('email'),
-                api_key=display_user_data.get('etrac_api_key')
-            )
+            check_for_maintenance_alerts(gestor_uid=display_uid, gestor_email=display_user_data.get('email'), api_key=display_user_data.get('etrac_api_key'))
         st.session_state.maint_check_done = True
+    
     st.subheader("Ordens de Serviço Corretivas e Preventivas")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
