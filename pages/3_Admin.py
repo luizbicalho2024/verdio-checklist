@@ -11,7 +11,8 @@ from services import firestore_service, auth_service, etrac_service
 st.set_page_config(page_title="Painel Admin", layout="wide")
 
 if not st.session_state.get('logged_in'):
-    st.warning("Faça o login."); st.stop()
+    st.switch_page("app.py")
+
 user_data = st.session_state.get('user_data', {})
 if user_data.get('role') != 'admin':
     st.error("Acesso negado."); st.stop()
@@ -111,8 +112,7 @@ with tab1:
             for user_row in all_users:
                 with st.container():
                     c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                    c1.write(user_row['email'])
-                    c2.write(user_row['role'])
+                    c1.write(user_row['email']); c2.write(user_row['role'])
                     with c3:
                         gestor_email_display = ""
                         gestor_uid = user_row.get('gestor_uid')
@@ -222,15 +222,12 @@ with tab6:
             vehicles = etrac_service.get_vehicles_from_etrac(selected_manager_email, api_key)
             schedules = firestore_service.get_maintenance_schedules_for_gestor(gestor_uid)
             if vehicles:
-                # --- CORREÇÃO 1: Usar enumerate para chaves únicas ---
                 for i, v in enumerate(vehicles):
                     plate = v['placa']
                     schedule = schedules.get(plate, {})
                     with st.expander(f"Plano para {plate}"):
-                        # --- CORREÇÃO 2: Garantir que os valores são float ---
                         threshold_val = float(schedule.get('threshold_km', 10000))
                         last_km_val = float(schedule.get('last_maintenance_km', 0))
-                        
                         with st.form(key=f"maint_form_{plate}_{i}"):
                             threshold = st.number_input("Alertar a cada (km)", min_value=1000.0, value=threshold_val, step=500.0)
                             last_km = st.number_input("Odômetro da Última Manutenção (km)", min_value=0.0, value=last_km_val)
