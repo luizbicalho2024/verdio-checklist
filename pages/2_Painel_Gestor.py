@@ -14,19 +14,25 @@ from services import firestore_service, auth_service, etrac_service, notificatio
 
 st.set_page_config(page_title="Painel Gestor", layout="wide")
 
-# --- LÓGICA DE IMPERSONIFICAÇÃO E LOGIN ---
+# --- BLOCO DE VERIFICAÇÃO E REDIRECIONAMENTO ---
 is_impersonating = False
+# Verifica se é um admin impersonando um gestor
 if st.session_state.get('user_data', {}).get('role') == 'admin' and st.session_state.get('impersonated_uid'):
     is_impersonating = True
     display_user_data = st.session_state.get('impersonated_user_data', {})
     display_uid = st.session_state.get('impersonated_uid')
     real_user_data = st.session_state.get('user_data', {})
 else:
-    if not st.session_state.get('logged_in'): st.warning("Faça o login."); st.stop()
+    # Se não estiver impersonando, verifica o login normal
+    if not st.session_state.get('logged_in'):
+        st.switch_page("app.py")  # Redireciona para o login se não estiver logado
+    
     display_user_data = st.session_state.get('user_data', {})
     display_uid = st.session_state.get('user_uid')
     real_user_data = display_user_data
-    if display_user_data.get('role') != 'gestor': st.error("Acesso negado."); st.stop()
+    if display_user_data.get('role') != 'gestor':
+        st.error("Acesso negado.")
+        st.stop()
 
 with st.sidebar:
     st.write(f"Logado como:")
@@ -75,13 +81,10 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
 
         if threshold > 0 and current_odom > (last_km + threshold) and notified_km < (last_km + threshold):
             overdue_vehicles.append({
-                "placa": plate,
-                "odometro_atual": int(current_odom),
-                "limite_km": int(last_km + threshold),
-                "plano_desc": schedule.get('notes', 'Manutenção Preventiva')
+                "placa": plate, "odometro_atual": int(current_odom),
+                "limite_km": int(last_km + threshold), "plano_desc": schedule.get('notes', 'Manutenção Preventiva')
             })
             firestore_service.update_maintenance_schedule(plate, {"notification_sent_for_km": last_km + threshold})
-
     if overdue_vehicles:
         for v in overdue_vehicles:
             st.toast(f"🚨 Alerta: Manutenção para {v['placa']} vencida!", icon="🚨")
@@ -240,7 +243,6 @@ with tab_bi:
 
 with tab_maint:
     st.subheader("Manutenção")
-    # Dispara a verificação de alertas uma vez por sessão ao entrar na aba
     if 'maint_check_done' not in st.session_state:
         with st.spinner("Verificando alertas de manutenção..."):
             check_for_maintenance_alerts(
@@ -278,7 +280,6 @@ with tab_maint:
             current_odometer = "N/A"
             if vehicle_info:
                 current_odometer = vehicle_info.get('odometro', 'N/A')
-
             st.markdown(f"#### Editando Plano para `{plate_to_edit}`")
             st.info(f"Odômetro atual deste veículo: **{current_odometer}**")
             with st.form(key=f"maint_form_{plate_to_edit}"):
@@ -298,27 +299,30 @@ with tab_maint:
                         del st.session_state['editing_schedule_plate']
                         st.rerun()
         else:
-            vehicles_maint = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
-            schedules_maint = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
-            if vehicles_maint:
-                for v in vehicles_maint:
-                    plate = v['placa']
-                    schedule = schedules_maint.get(plate)
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        if schedule:
-                            st.success(f"**{plate}:** Plano ativo - Alertar a cada {int(schedule['threshold_km'])} km.")
-                        else:
-                            st.warning(f"**{plate}:** Nenhum plano de manutenção configurado.")
-                    with col2:
-                        button_text = "Editar Plano" if schedule else "Criar Plano"
-                        if st.button(button_text, key=f"manage_sched_{plate}"):
-                            st.session_state.editing_schedule_plate = plate
-                            st.rerun()
-                        if schedule and st.button("Excluir", key=f"delete_sched_{plate}"):
-                            firestore_service.delete_maintenance_schedule(plate)
-                            st.rerun()
-                    st.divider()
+            if st.button("Carregar Veículos para Gerenciar Planos"):
+                st.session_state.load_vehicles_for_maint = True
+            if st.session_state.get('load_vehicles_for_maint'):
+                vehicles_maint = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
+                schedules_maint = firestore_service.get_maintenance_schedules_for_gestor(display_uid)
+                if vehicles_maint:
+                    for v in vehicles_maint:
+                        plate = v['placa']
+                        schedule = schedules_maint.get(plate)
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            if schedule:
+                                st.success(f"**{plate}:** Plano ativo - Alertar a cada {int(schedule['threshold_km'])} km.")
+                            else:
+                                st.warning(f"**{plate}:** Nenhum plano de manutenção configurado.")
+                        with col2:
+                            button_text = "Editar Plano" if schedule else "Criar Plano"
+                            if st.button(button_text, key=f"manage_sched_{plate}"):
+                                st.session_state.editing_schedule_plate = plate
+                                st.rerun()
+                            if schedule and st.button("Excluir", key=f"delete_sched_{plate}"):
+                                firestore_service.delete_maintenance_schedule(plate)
+                                st.rerun()
+                        st.divider()
 
 with tab_motoristas:
     st.subheader("Gerenciar Equipe de Motoristas")
