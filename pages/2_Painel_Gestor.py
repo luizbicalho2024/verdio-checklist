@@ -99,6 +99,7 @@ def check_for_maintenance_alerts(gestor_uid, gestor_email, api_key):
         notification_service.send_email_notification(gestor_email, subject, email_body)
         firestore_service.log_action(gestor_email, "ALERTA_MANUTENCAO", f"{len(overdue_vehicles)} veículos com manutenção próxima.")
 
+# Adicionada a nova aba na lista
 tab_mapa, tab_aprov, tab_hist, tab_bi, tab_maint, tab_motoristas, tab_checklist = st.tabs([
     "🗺️ Mapa da Frota", "⚠️ Aprovações", "📋 Histórico", "📈 Análise (BI)", 
     "🛠️ Manutenção", "👤 Gerenciar Motoristas", "📝 Gerenciar Checklist"
@@ -191,7 +192,7 @@ with tab_hist:
     st.subheader("Histórico Detalhado de Viagens por Veículo")
     vehicles_from_api_hist = etrac_service.get_vehicles_from_etrac(display_user_data.get('email'), display_user_data.get('etrac_api_key'))
     if vehicles_from_api_hist:
-        plate_options = [v['placa'] for v in vehicles_from_api_hist]
+        plate_options = sorted([v['placa'] for v in vehicles_from_api_hist])
         col1, col2, col3 = st.columns([2,1,1])
         with col1:
             selected_plate = st.selectbox("Selecione um veículo", options=plate_options, key="hist_plate_select")
@@ -202,11 +203,11 @@ with tab_hist:
             if st.button("Buscar Viagens"):
                 with st.spinner("Buscando histórico de viagens..."):
                     trips = etrac_service.get_trip_summary(display_user_data.get('email'), display_user_data.get('etrac_api_key'), selected_plate, selected_date)
-                    if 'trip_summary' not in st.session_state:
-                        st.session_state.trip_summary = {}
-                    st.session_state.trip_summary[selected_plate] = trips
-        if 'trip_summary' in st.session_state and selected_plate in st.session_state.trip_summary:
-            trips = st.session_state.trip_summary[selected_plate]
+                    st.session_state.trip_summary = trips
+                    st.session_state.last_searched_plate = selected_plate
+        
+        if 'trip_summary' in st.session_state and st.session_state.get('last_searched_plate') == selected_plate:
+            trips = st.session_state.trip_summary
             if trips:
                 st.dataframe(trips, use_container_width=True, hide_index=True)
             else:
@@ -256,7 +257,6 @@ with tab_maint:
                 api_key=display_user_data.get('etrac_api_key')
             )
         st.session_state.maint_check_done = True
-    
     st.subheader("Ordens de Serviço Corretivas e Preventivas")
     orders = firestore_service.get_maintenance_orders_for_gestor(display_uid)
     if not orders:
@@ -393,3 +393,15 @@ with tab_motoristas:
                             firestore_service.update_user_data(driver['uid'], {'is_active': True})
                             st.rerun()
                 st.divider()
+
+with tab_checklist:
+    st.subheader("Gerenciar Modelo de Checklist da Equipe")
+    st.info("Edite os itens que os motoristas da sua equipe devem verificar. Este modelo é específico para sua gestão.")
+    current_template = firestore_service.get_checklist_template(gestor_uid=display_uid)
+    template_str = "\n".join(current_template)
+    new_template_str = st.text_area("Itens do Checklist (um por linha)", value=template_str, height=250, key=f"checklist_template_gestor_{display_uid}")
+    if st.button("Salvar Modelo de Checklist", type="primary"):
+        new_template_list = [line.strip() for line in new_template_str.split("\n") if line.strip()]
+        firestore_service.update_checklist_template(new_template_list, gestor_uid=display_uid)
+        st.success("Modelo de checklist salvo com sucesso para sua equipe!")
+        st.rerun()
