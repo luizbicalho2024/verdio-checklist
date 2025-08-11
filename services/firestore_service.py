@@ -63,14 +63,22 @@ def log_action(user_email, action, details):
     db.collection("logs").add(log_data)
 
 def save_checklist(data):
-    return db.collection("checklists").add(data)
+    try:
+        _, doc_ref = db.collection("checklists").add(data)
+        return doc_ref.id
+    except Exception as e:
+        print(f"Erro ao salvar checklist: {e}")
+        return None
+
+def update_checklist_with_photos(doc_id, photo_updates):
+    db.collection("checklists").document(doc_id).update(photo_updates)
 
 def get_checklists_for_gestor(gestor_uid):
     query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).order_by("timestamp", direction=firestore.Query.DESCENDING)
     return [doc.to_dict() for doc in query.stream()]
 
 def get_pending_checklists_for_gestor(gestor_uid):
-    query = db.collection("checklists").where("gestor_uid", "==", "gestor_uid").where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
+    query = db.collection("checklists").where("gestor_uid", "==", gestor_uid).where("status", "==", "Pendente").order_by("timestamp", direction=firestore.Query.DESCENDING)
     checklists = []
     for doc in query.stream():
         checklist_data = doc.to_dict()
@@ -94,16 +102,7 @@ def get_checklist_template():
 def update_checklist_template(items_list):
     db.collection("app_configs").document("checklist_template").set({"items": items_list})
 
-def create_maintenance_order(checklist_data):
-    order_data = {
-        "created_at": datetime.now(), "status": "Aberta",
-        "vehicle_plate": checklist_data.get('vehicle_plate'),
-        "driver_email": checklist_data.get('driver_email'),
-        "gestor_uid": checklist_data.get('gestor_uid'),
-        "checklist_notes": checklist_data.get('notes'),
-        "failed_items": [item for item, status in checklist_data.get('items', {}).items() if status == "Não OK"],
-        "maintenance_notes": ""
-    }
+def create_maintenance_order(order_data):
     db.collection("maintenance_orders").add(order_data)
 
 def get_maintenance_orders_for_gestor(gestor_uid):
@@ -140,9 +139,8 @@ def get_geofence_settings():
     return doc_ref.to_dict() if doc_ref.exists else None
 
 def update_maintenance_schedule(plate, data):
-    # Adiciona um campo para controle de notificação ao criar um novo plano
-    if 'threshold_km' in data and 'last_maintenance_km' in data:
-        data['notification_sent_for_km'] = data['last_maintenance_km']
+    # Reseta o status da notificação sempre que um plano é salvo/atualizado.
+    data['notification_sent_for_km'] = data.get('last_maintenance_km', 0)
     db.collection("maintenance_schedules").document(plate).set(data, merge=True)
 
 def get_maintenance_schedules_for_gestor(gestor_uid):
@@ -156,18 +154,3 @@ def delete_maintenance_schedule(plate):
     except Exception as e:
         print(f"Erro ao excluir plano: {e}")
         return False
-
-def save_checklist(data):
-    """Salva um novo checklist e retorna o ID do documento criado."""
-    try:
-        update_time, doc_ref = db.collection("checklists").add(data)
-        return doc_ref.id
-    except Exception as e:
-        print(f"Erro ao salvar checklist: {e}")
-        return None
-
-def update_checklist_with_photos(doc_id, photo_updates):
-    """Atualiza um checklist existente com as URLs das fotos."""
-    # O formato do update será, por exemplo: {"items.Pneus.photo_url": "http://..."}
-    # Isso usa a notação de ponto para atualizar campos aninhados.
-    db.collection("checklists").document(doc_id).update(photo_updates)
