@@ -71,13 +71,18 @@ def is_totp_enabled(uid):
     return user_data.get('totp_enabled', False) if user_data else False
 
 def logout():
+    """Limpa todas as chaves da sessão e redireciona para a página de login."""
     keys_to_delete = [
         'logged_in', 'user_uid', 'user_data', 'flow', 
         'pending_login_uid', 'redirected', 
-        'impersonated_uid', 'impersonated_user_data'
+        'impersonated_uid', 'impersonated_user_data',
+        'editing_driver_uid', 'editing_schedule_plate', 'last_log_doc',
+        'trip_summary', 'maint_check_done', 'load_vehicles_for_maint'
     ]
     for key in keys_to_delete:
         if key in st.session_state:
             del st.session_state[key]
+    
+    # Define o fluxo para 'login' e redireciona para a página principal
     st.session_state['flow'] = 'login'
     st.switch_page("app.py")
