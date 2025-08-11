@@ -11,6 +11,9 @@ from utils import geo_util
 
 st.set_page_config(page_title="Painel Motorista", layout="wide")
 
+# CSS PARA OCULTAR A SIDEBAR
+st.markdown("""<style> [data-testid="stSidebar"] { display: none; } </style>""", unsafe_allow_html=True)
+
 if not st.session_state.get('logged_in'):
     st.switch_page("app.py")
 
@@ -19,13 +22,15 @@ if user_data.get('role') != 'motorista':
     st.error("Acesso negado.")
     st.stop()
 
-with st.sidebar:
-    st.write(f"Logado como:")
-    st.markdown(f"**{user_data.get('email')}**")
-    if st.button("Sair", use_container_width=True):
+# CABEÇALHO COM TÍTULO E BOTÃO SAIR
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.title(f"📋 Checklist Pré-Jornada")
+with col2:
+    st.write("")
+    if st.button("Sair 🚪", use_container_width=True):
         auth_service.logout()
-
-st.title(f"📋 Checklist Pré-Jornada")
+st.caption(f"Motorista: {user_data.get('email')}")
 
 gestor_uid = user_data.get('gestor_uid')
 if not gestor_uid:
@@ -53,7 +58,6 @@ if not checklist_items_template:
 vehicle_options = {f"{v['placa']} - {v.get('modelo', '')}": v for v in vehicles}
 selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_options.keys())
 
-# Reseta o estado do checklist se o veículo for trocado
 if 'current_checklist' not in st.session_state or st.session_state.current_checklist['plate'] != selected_vehicle_str:
     st.session_state.current_checklist = {
         "plate": selected_vehicle_str,
@@ -70,21 +74,17 @@ if selected_vehicle_str:
         col1, col2, col3 = st.columns([4, 1, 1])
         with col1:
             st.write(f"**{item.replace('_', ' ').capitalize()}**")
-
         current_status = st.session_state.current_checklist["status"].get(item, "OK")
-
         with col2:
             if st.button("OK", key=f"ok_{item}_{selected_vehicle_data['placa']}", type="primary" if current_status == "OK" else "secondary", use_container_width=True):
                 st.session_state.current_checklist["status"][item] = "OK"
                 if item in st.session_state.current_checklist["photos"]:
                     del st.session_state.current_checklist["photos"][item]
                 st.rerun()
-        
         with col3:
             if st.button("Não OK", key=f"naook_{item}_{selected_vehicle_data['placa']}", type="primary" if current_status == "Não OK" else "secondary", use_container_width=True):
                 st.session_state.current_checklist["status"][item] = "Não OK"
                 st.rerun()
-
         if st.session_state.current_checklist["status"].get(item) == "Não OK":
             photo = st.camera_input(f"📸 Foto obrigatória para: {item}", key=f"photo_{item}_{selected_vehicle_data['placa']}")
             if photo:
@@ -141,9 +141,7 @@ if selected_vehicle_str:
                     "status": "Aprovado" if is_ok else "Pendente",
                     "location_status": location_status
                 }
-                
                 checklist_id = firestore_service.save_checklist(checklist_data)
-                
                 if checklist_id and st.session_state.current_checklist['photos']:
                     photo_updates = {}
                     for item_name, photo_file in st.session_state.current_checklist['photos'].items():
@@ -153,7 +151,6 @@ if selected_vehicle_str:
                             photo_updates[f"items.{item_name}.photo_url"] = photo_url
                     if photo_updates:
                         firestore_service.update_checklist_with_photos(checklist_id, photo_updates)
-                
                 if is_ok:
                     st.balloons()
                     plate = selected_vehicle_data['placa']
@@ -182,6 +179,5 @@ if selected_vehicle_str:
 
                 firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
                 st.success("Checklist enviado com sucesso!")
-
                 del st.session_state.current_checklist
                 st.rerun()
