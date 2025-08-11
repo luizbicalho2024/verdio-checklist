@@ -6,13 +6,11 @@ from datetime import datetime
 
 sys.path.append(os.getcwd())
 
-from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service
+from services import firestore_service, etrac_service, notification_service, auth_service, twilio_service, storage_service
 from utils import geo_util
 
 st.set_page_config(page_title="Painel Motorista", layout="wide")
 
-# --- BLOCO DE VERIFICAÇÃO ATUALIZADO ---
-# Se o usuário não estiver logado, redireciona para a página de login.
 if not st.session_state.get('logged_in'):
     st.switch_page("app.py")
 
@@ -58,20 +56,40 @@ selected_vehicle_str = st.selectbox("Selecione o Veículo", options=vehicle_opti
 if selected_vehicle_str:
     selected_vehicle_data = vehicle_options[selected_vehicle_str]
     st.subheader(f"Itens de Verificação para {selected_vehicle_data['placa']}")
-    
+
+    if 'checklist_photos' not in st.session_state:
+        st.session_state.checklist_photos = {}
+
     with st.form("checklist_form"):
-        results = {}
+        results_status = {}
         for item in checklist_items_template:
-            results[item] = st.radio(item.replace('_', ' ').capitalize(), ["OK", "Não OK"], horizontal=True)
+            status = st.radio(item.replace('_', ' ').capitalize(), ["OK", "Não OK"], horizontal=True, key=f"radio_{item}")
+            results_status[item] = status
+            
+            if status == "Não OK":
+                photo = st.camera_input(f"📸 Foto obrigatória para: {item}", key=f"photo_{item}")
+                if photo:
+                    st.session_state.checklist_photos[item] = photo
         
         notes = st.text_area("Observações (obrigatório se algum item for 'Não OK')")
+        submitted = st.form_submit_button("Enviar Checklist")
+
+    if submitted:
+        validation_passed = True
+        failed_items_without_photo = []
+        for item, status in results_status.items():
+            if status == "Não OK" and item not in st.session_state.checklist_photos:
+                validation_passed = False
+                failed_items_without_photo.append(item)
         
-        if st.form_submit_button("Enviar Checklist"):
-            is_ok = all(status == "OK" for status in results.values())
+        if not validation_passed:
+            st.error(f"Erro: É obrigatório tirar uma foto para os seguintes itens: {', '.join(failed_items_without_photo)}")
+        else:
+            is_ok = all(status == "OK" for status in results_status.values())
             if not is_ok and not notes:
                 st.error("Preencha as observações se algum item estiver 'Não OK'.")
             else:
-                with st.spinner("Verificando localização e salvando..."):
+                with st.spinner("Salvando checklist e enviando fotos..."):
                     geofence = firestore_service.get_geofence_settings()
                     location_status = "Não verificado"
                     if geofence:
@@ -89,6 +107,7 @@ if selected_vehicle_str:
                         else:
                             location_status = "Posição não encontrada"
                     
+                    items_data_to_save = {item: {"status": status} for item, status in results_status.items()}
                     checklist_data = {
                         "vehicle_plate": selected_vehicle_data['placa'],
                         "tracker_id": selected_vehicle_data.get('idRastreador'),
@@ -96,37 +115,52 @@ if selected_vehicle_str:
                         "driver_email": user_data['email'],
                         "gestor_uid": user_data['gestor_uid'],
                         "timestamp": datetime.now(),
-                        "items": results,
+                        "items": items_data_to_save,
                         "notes": notes,
                         "status": "Aprovado" if is_ok else "Pendente",
                         "location_status": location_status
                     }
-                
-                if is_ok:
-                    st.balloons()
-                    plate = selected_vehicle_data['placa']
-                    serial = selected_vehicle_data.get('idRastreador')
-                    vehicle_details = firestore_service.get_vehicle_details_by_plate(plate)
-                    if vehicle_details and vehicle_details.get('tracker_sim_number'):
-                        sim_number = vehicle_details['tracker_sim_number']
-                        st.info(f"Todos os itens OK. Enviando comando de desbloqueio para o veículo {plate}...")
-                        twilio_service.send_unlock_sms(to_number=sim_number, equipamento_serial=serial, admin_email_logger=user_data['email'])
+                    
+                    checklist_id = firestore_service.save_checklist(checklist_data)
+                    
+                    if checklist_id and st.session_state.checklist_photos:
+                        photo_updates = {}
+                        for item_name, photo_file in st.session_state.checklist_photos.items():
+                            file_path = f"checklists/{checklist_id}/{item_name.replace(' ', '_')}.jpg"
+                            photo_url = storage_service.upload_file(photo_file, file_path)
+                            if photo_url:
+                                photo_updates[f"items.{item_name}.photo_url"] = photo_url
+                        
+                        if photo_updates:
+                            firestore_service.update_checklist_with_photos(checklist_id, photo_updates)
+                    
+                    if is_ok:
+                        st.balloons()
+                        plate = selected_vehicle_data['placa']
+                        serial = selected_vehicle_data.get('idRastreador')
+                        vehicle_details = firestore_service.get_vehicle_details_by_plate(plate)
+                        if vehicle_details and vehicle_details.get('tracker_sim_number'):
+                            sim_number = vehicle_details['tracker_sim_number']
+                            st.info(f"Todos os itens OK. Enviando comando de desbloqueio para o veículo {plate}...")
+                            twilio_service.send_unlock_sms(to_number=sim_number, equipamento_serial=serial, admin_email_logger=user_data['email'])
+                        else:
+                            st.error(f"ERRO: Não foi possível desbloquear o veículo {plate}. Nenhum número de chip está vinculado. Avise o administrador.")
+                            checklist_data['status'] = "Pendente" # Muda status para o gestor aprovar
+                            checklist_data['notes'] += "\n\n[SISTEMA] Falha no desbloqueio automático: Chip não cadastrado."
+                            # Atualiza o status no banco de dados
+                            firestore_service.update_checklist_with_photos(checklist_id, {"status": "Pendente", "notes": checklist_data['notes']})
                     else:
-                        st.error(f"ERRO: Não foi possível desbloquear o veículo {plate}. Nenhum número de chip está vinculado. Avise o administrador.")
-                        checklist_data['status'] = "Pendente"
-                        checklist_data['notes'] += "\n\n[SISTEMA] Falha no desbloqueio automático: Chip não cadastrado."
-                else:
-                    st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
-                    if gestor_data and gestor_data.get('email'):
-                        subject = f"Alerta: Checklist Pendente para o Veículo {selected_vehicle_data['placa']}"
-                        body = f"""
-                        <h3>Checklist com Inconformidades</h3>
-                        <p>O motorista <b>{user_data['email']}</b> submeteu um checklist para o veículo <b>{selected_vehicle_data['placa']}</b> que requer sua atenção.</p>
-                        <p><b>Localização:</b> {location_status}</p>
-                        <p><b>Observações:</b> {notes}</p>
-                        <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
-                        notification_service.send_email_notification(gestor_data['email'], subject, body)
+                        st.warning("Checklist com inconformidades. Seu gestor foi notificado por e-mail.")
+                        if gestor_data and gestor_data.get('email'):
+                            subject = f"Alerta: Checklist Pendente para o Veículo {selected_vehicle_data['placa']}"
+                            body = f"""<h3>Checklist com Inconformidades</h3>
+                                     <p>O motorista <b>{user_data['email']}</b> submeteu um checklist para o veículo <b>{selected_vehicle_data['placa']}</b> que requer sua atenção.</p>
+                                     <p><b>Localização:</b> {location_status}</p>
+                                     <p><b>Observações:</b> {notes}</p>
+                                     <p>Por favor, acesse o painel de gestor para aprovar ou reprovar a saída do veículo.</p>"""
+                            notification_service.send_email_notification(gestor_data['email'], subject, body)
 
-                firestore_service.save_checklist(checklist_data)
-                firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
-                st.success("Checklist enviado com sucesso!")
+                    firestore_service.log_action(user_data['email'], "CHECKLIST_ENVIADO", f"Veículo {selected_vehicle_data['placa']} status {checklist_data['status']}.")
+                    del st.session_state.checklist_photos
+                    st.success("Checklist enviado com sucesso!")
+                    st.rerun()
