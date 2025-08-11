@@ -10,6 +10,16 @@ from utils import qr_code_util
 
 st.set_page_config(page_title="Login - Checklist App", layout="wide")
 
+# --- CSS PARA OCULTAR A SIDEBAR ---
+st.markdown("""
+    <style>
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
 def handle_login(email, password):
     user_record = auth_service.verify_user_password(email, password)
     if user_record:
@@ -121,14 +131,29 @@ with st.container():
                 else: st.error("Papel de usuário desconhecido.")
             else:
                 user_data = st.session_state.user_data
-                st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
-                st.info("Você já está logado. Use o menu à esquerda para navegar.")
-                with st.sidebar:
-                    st.write(f"Logado como:")
-                    st.markdown(f"**{user_data.get('email')}**")
-                    st.write(f"Papel: **{user_data.get('role').capitalize()}**")
-                    if st.button("Sair", use_container_width=True):
+                
+                # --- NOVO CABEÇALHO COM TÍTULO E BOTÃO SAIR ---
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.title(f"Bem-vindo(a), {user_data.get('email', '')}!")
+                with col2:
+                    st.write("") # Espaçamento
+                    if st.button("Sair 🚪", use_container_width=True):
                         auth_service.logout()
+                
+                st.info("Você já está logado. Para acessar seu painel, clique no link desejado abaixo.")
+                
+                # Botões de navegação manual
+                if user_data.get('role') == 'motorista':
+                    if st.button("Ir para o Painel do Motorista", use_container_width=True):
+                        st.switch_page("pages/1_Painel_Motorista.py")
+                elif user_data.get('role') == 'gestor':
+                    if st.button("Ir para o Painel do Gestor", use_container_width=True):
+                        st.switch_page("pages/2_Painel_Gestor.py")
+                elif user_data.get('role') == 'admin':
+                    if st.button("Ir para o Painel de Admin", use_container_width=True):
+                        st.switch_page("pages/3_Admin.py")
+                
                 if not user_data.get('totp_enabled'):
                     if st.button("🔒 Ativar Autenticação de Dois Fatores"):
                         st.session_state['flow'] = 'enable_2fa'
