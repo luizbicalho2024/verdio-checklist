@@ -8,3 +8,4 @@ pyotp
 qrcode
 pillow
 matplotlib
+streamlit-shadcn-ui
