@@ -35,7 +35,7 @@ def clear_editing_state():
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "⚙️ Gestão de Usuários", "👁️ Visualizar", "📲 Vincular Chip", 
-    "📝 Checklist", "📍 Geofence", "🔧 Manut. Preventiva", "📜 Logs"
+    "📝 Checklist Padrão (Global)", "📍 Geofence", "🔧 Manut. Preventiva", "📜 Logs"
 ])
 
 with tab1:
@@ -180,15 +180,15 @@ with tab3:
                     st.divider()
 
 with tab4:
-    st.subheader("Gerenciar Modelo de Checklist Padrão")
-    st.info("Edite os itens que os motoristas devem verificar. Salve para aplicar a todos os checklists futuros.")
+    st.subheader("Gerenciar Modelo de Checklist Padrão (Global)")
+    st.info("Edite os itens do checklist padrão. Este modelo será usado por gestores que não configurarem um próprio.")
     current_template = firestore_service.get_checklist_template()
     template_str = "\n".join(current_template)
     new_template_str = st.text_area("Itens do Checklist (um por linha)", value=template_str, height=250)
-    if st.button("Salvar Modelo de Checklist", type="primary"):
+    if st.button("Salvar Modelo de Checklist Global", type="primary"):
         new_template_list = [line.strip() for line in new_template_str.split("\n") if line.strip()]
         firestore_service.update_checklist_template(new_template_list)
-        st.success("Modelo de checklist salvo com sucesso!"); st.cache_data.clear()
+        st.success("Modelo de checklist padrão salvo com sucesso!"); st.cache_data.clear()
 
 with tab5:
     st.subheader("Configurar Geofence (Cerca Eletrônica)")
